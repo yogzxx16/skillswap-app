@@ -1,7 +1,19 @@
-import { DEMO_USERS_LIST, getAvatarColor, BADGES } from '../data/demoData';
+import { useEffect } from 'react';
+import { DEMO_USERS_LIST, getAvatarColor, BADGES } from '../utils/constants';
 import { HiTrendingUp } from 'react-icons/hi';
+import confetti from 'canvas-confetti';
+import { motion } from 'framer-motion';
+import PageTransition from '../components/PageTransition';
+import CountUpNumber from '../components/CountUpNumber';
 
 export default function LeaderboardPage() {
+  useEffect(() => {
+    confetti({
+      particleCount: 150,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
+  }, []);
   const sorted = [...DEMO_USERS_LIST].sort((a, b) => b.xp - a.xp).slice(0, 10);
 
   const getRankStyle = (rank) => {
@@ -12,7 +24,7 @@ export default function LeaderboardPage() {
   };
 
   return (
-    <div className="space-y-6 fade-in">
+    <PageTransition className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl lg:text-3xl font-bold text-white">Leaderboard</h1>
@@ -26,7 +38,7 @@ export default function LeaderboardPage() {
           if (!user) return null;
           const isFirst = idx === 0;
           return (
-            <div key={user.uid} className={`glass-card p-5 text-center ${isFirst ? 'glow-blue -mt-4' : ''} transition-all hover:-translate-y-1`}>
+            <motion.div key={user.uid} initial={{ y: -100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ type: "spring", bounce: 0.5, delay: idx * 0.2 }} whileHover={{ y: -5 }} className={`glass-card p-5 text-center ${isFirst ? 'glow-blue -mt-4' : ''}`}>
               <div className="text-3xl mb-3">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}</div>
               <div
                 className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white text-2xl font-bold mx-auto mb-3 ${isFirst ? 'ring-2 ring-yellow-500/50' : ''}`}
@@ -38,13 +50,13 @@ export default function LeaderboardPage() {
               <p className="text-xs text-gray-500">{user.city}</p>
               <div className="mt-3 flex items-center justify-center gap-1">
                 <HiTrendingUp className="text-electric" size={14} />
-                <span className="text-electric font-bold">{user.xp.toLocaleString()} XP</span>
+                <span className="text-electric font-bold"><CountUpNumber value={user.xp} /> XP</span>
               </div>
               <div className="flex items-center justify-center gap-2 mt-2 text-xs text-gray-400">
                 <span>🔥 {user.streak}</span>
                 <span>🪙 {user.coins}</span>
               </div>
-            </div>
+            </motion.div>
           );
         })}
       </div>
@@ -82,7 +94,7 @@ export default function LeaderboardPage() {
 
               {/* Stats */}
               <div className="flex items-center gap-4 text-sm shrink-0">
-                <span className="text-electric font-bold">⚡ {user.xp.toLocaleString()}</span>
+                <span className="text-electric font-bold">⚡ <CountUpNumber value={user.xp} /></span>
                 <span className="text-gray-400 hidden sm:inline">🔥 {user.streak}</span>
                 <div className="hidden lg:flex gap-1">
                   {user.badges.slice(0, 3).map(b => (
@@ -94,6 +106,6 @@ export default function LeaderboardPage() {
           );
         })}
       </div>
-    </div>
+    </PageTransition>
   );
 }

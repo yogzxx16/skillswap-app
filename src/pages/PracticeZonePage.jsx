@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { QUIZ_QUESTIONS } from '../data/demoData';
+import { QUIZ_QUESTIONS } from '../utils/constants';
 import { HiAcademicCap, HiLightningBolt, HiClock, HiPhotograph, HiCheckCircle, HiXCircle } from 'react-icons/hi';
 
 const TABS = [

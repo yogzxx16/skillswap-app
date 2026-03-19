@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { SWAP_REQUESTS, getAvatarColor } from '../data/demoData';
+import { SWAP_REQUESTS, getAvatarColor } from '../utils/constants';
 import { HiCheck, HiX, HiClock, HiSwitchHorizontal, HiArrowRight } from 'react-icons/hi';
 
 const statusConfig = {

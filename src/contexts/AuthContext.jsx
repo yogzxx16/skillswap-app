@@ -1,4 +1,8 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { auth, googleProvider, db } from '../firebase';
+import { signInWithPopup } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { updateUserPresence } from '../services/chatService';
 
 const AuthContext = createContext(null);
 
@@ -44,6 +48,21 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, []);
 
+  // Sync presence to Firestore
+  useEffect(() => {
+    if (user?.uid && !user.uid.startsWith('demo-')) {
+      // Update immediately on login
+      updateUserPresence(user.uid).catch(console.error);
+
+      // Setup interval to update every 1 minute
+      const interval = setInterval(() => {
+        updateUserPresence(user.uid).catch(console.error);
+      }, 60000);
+
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+
   const login = async (email, password) => {
     // Demo login
     const demoUser = DEMO_USERS[email] || {
@@ -86,7 +105,52 @@ export function AuthProvider({ children }) {
   };
 
   const loginWithGoogle = async () => {
-    return login('demo@skillswap.com', 'demo');
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const loggedInUser = result.user;
+      
+      const userDocRef = doc(db, 'users', loggedInUser.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      let userProfile;
+      if (userDoc.exists()) {
+        userProfile = userDoc.data();
+      } else {
+        userProfile = {
+          ...DEFAULT_PROFILE,
+          uid: loggedInUser.uid,
+          email: loggedInUser.email,
+          displayName: loggedInUser.displayName || loggedInUser.email.split('@')[0],
+          photoURL: loggedInUser.photoURL,
+          xp: 0,
+          coins: 100,
+          streak: 0,
+          level: 'Beginner',
+          badges: [],
+          teachSkills: [],
+          learnSkills: [],
+          onboarded: false,
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(userDocRef, userProfile);
+      }
+      
+      const sessionUser = {
+        uid: loggedInUser.uid,
+        email: loggedInUser.email,
+        displayName: loggedInUser.displayName || loggedInUser.email.split('@')[0],
+        photoURL: loggedInUser.photoURL,
+      };
+
+      setUser(sessionUser);
+      setProfile(userProfile);
+      localStorage.setItem('skillswap_user', JSON.stringify({ user: sessionUser, profile: userProfile }));
+      
+      return sessionUser;
+    } catch (error) {
+      console.error("Google sign in error:", error);
+      throw error;
+    }
   };
 
   const logout = () => {

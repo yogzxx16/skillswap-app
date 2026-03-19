@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { subscribeToChats } from '../services/chatService';
 import { getAvatarColor } from '../data/demoData';
 import {
   HiHome, HiGlobe, HiSwitchHorizontal, HiChatAlt2,
-  HiAcademicCap, HiChartBar, HiUser, HiLogout, HiMenu, HiX, HiLightningBolt
+  HiAcademicCap, HiChartBar, HiUser, HiLogout, HiMenu, HiX, HiRefresh
 } from 'react-icons/hi';
+import { motion } from 'framer-motion';
 
 const navItems = [
   { path: '/dashboard', icon: HiHome, label: 'Dashboard' },
@@ -22,6 +24,18 @@ export default function Layout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [totalUnread, setTotalUnread] = useState(0);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsubscribe = subscribeToChats(user.uid, (chats) => {
+      const unreadCount = chats.reduce((sum, chat) => {
+        return sum + (chat.unreadCount?.[user.uid] || 0);
+      }, 0);
+      setTotalUnread(unreadCount);
+    });
+    return () => unsubscribe();
+  }, [user]);
 
   const handleLogout = () => {
     logout();
@@ -38,7 +52,11 @@ export default function Layout({ children }) {
           {sidebarOpen ? <HiX size={24} /> : <HiMenu size={24} />}
         </button>
         <div className="flex items-center gap-2">
-          <HiLightningBolt className="text-electric" size={24} />
+          <motion.div
+            whileHover={{ rotate: 360, transition: { repeat: Infinity, duration: 4, ease: "linear" } }}
+          >
+            <HiRefresh className="text-electric" size={24} />
+          </motion.div>
           <span className="font-bold text-lg bg-gradient-to-r from-electric to-neon-purple bg-clip-text text-transparent">SkillSwap</span>
         </div>
         <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ background: avatarColor }}>
@@ -52,7 +70,11 @@ export default function Layout({ children }) {
         <div className="px-6 py-6 border-b border-white/10">
           <Link to="/dashboard" className="flex items-center gap-3 no-underline" onClick={() => setSidebarOpen(false)}>
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-electric to-neon-purple flex items-center justify-center">
-              <HiLightningBolt className="text-white" size={22} />
+              <motion.div
+                whileHover={{ rotate: 360, transition: { repeat: Infinity, duration: 4, ease: "linear" } }}
+              >
+                <HiRefresh className="text-white" size={22} />
+              </motion.div>
             </div>
             <span className="text-xl font-bold bg-gradient-to-r from-electric to-neon-purple bg-clip-text text-transparent">SkillSwap</span>
           </Link>
@@ -61,12 +83,17 @@ export default function Layout({ children }) {
         {/* User Card */}
         <div className="px-4 py-4">
           <div className="glass-card p-3 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: avatarColor }}>
-              {profile?.displayName?.charAt(0) || 'U'}
-            </div>
+            {profile?.photoURL ? (
+              <img src={profile.photoURL} alt="Profile" className="w-10 h-10 rounded-full object-cover shrink-0" />
+            ) : (
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: avatarColor }}>
+                {profile?.displayName?.charAt(0) || 'U'}
+              </div>
+            )}
             <div className="min-w-0">
               <p className="text-sm font-semibold text-white truncate">{profile?.displayName}</p>
-              <p className="text-xs text-gray-400">{profile?.level || 'Beginner'} • {profile?.xp || 0} XP</p>
+              {profile?.email && <p className="text-[10px] text-gray-400 truncate">{profile.email}</p>}
+              <p className="text-xs text-electric mt-0.5">{profile?.level || 'Beginner'} • {profile?.xp || 0} XP</p>
             </div>
           </div>
         </div>
@@ -80,14 +107,21 @@ export default function Layout({ children }) {
                 key={path}
                 to={path}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 no-underline ${
+                className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 no-underline ${
                   isActive
                     ? 'bg-electric/20 text-electric border border-electric/30'
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                <Icon size={20} />
-                {label}
+                <div className="flex items-center gap-3">
+                  <Icon size={20} />
+                  {label}
+                </div>
+                {label === 'Chat' && totalUnread > 0 && (
+                  <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center text-[10px] text-white font-bold shrink-0">
+                    {totalUnread}
+                  </div>
+                )}
               </Link>
             );
           })}
