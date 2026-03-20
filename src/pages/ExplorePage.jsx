@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { HiSearch, HiSwitchHorizontal } from 'react-icons/hi';
 import { useAuth } from '../contexts/AuthContext';
@@ -27,7 +27,10 @@ export default function ExplorePage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [requestedUsers, setRequestedUsers] = useState([]);
+  const [requestedUsers, setRequestedUsers] = useState(() => {
+    const saved = localStorage.getItem('skillswap_requested');
+    return saved ? JSON.parse(saved) : [];
+  });
   const { user, profile } = useAuth();
   const navigate = useNavigate();
 
@@ -60,15 +63,33 @@ export default function ExplorePage() {
   });
 
   const handleRequest = async (targetUser) => {
-    setRequestedUsers(prev => [...prev, targetUser.uid]);
-    const mySkill = profile?.teachSkills?.[0] || 'my skills';
-    const theirSkill = targetUser.teachSkills?.[0] || 'your skills';
-    const initialMessage = `Hi! I'd like to swap my ${mySkill} for your ${theirSkill}. Interested?`;
+    setRequestedUsers(prev => {
+      const updated = [...prev, targetUser.uid];
+      localStorage.setItem('skillswap_requested', JSON.stringify(updated));
+      return updated;
+    });
+
     try {
-      await createOrGetChat(user, targetUser, initialMessage);
+      await addDoc(collection(db, 'swapRequests'), {
+        fromUid: user.uid,
+        fromName: profile?.displayName || user.displayName,
+        toUid: targetUser.uid,
+        toName: targetUser.displayName,
+        offeredSkill: profile?.teachSkills?.[0] || 'my skills',
+        wantedSkill: targetUser.teachSkills?.[0] || 'their skills',
+        message: `Hi! I'd like to swap my ${profile?.teachSkills?.[0] || 'skills'} for your ${targetUser.teachSkills?.[0] || 'skills'}. Interested?`,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+      });
+
+      await createOrGetChat(
+        user,
+        targetUser,
+        `Hi! I'd like to swap my ${profile?.teachSkills?.[0] || 'skills'} for your ${targetUser.teachSkills?.[0] || 'skills'}. Interested?`
+      );
       navigate('/chat');
     } catch (error) {
-      console.error('Error creating chat:', error);
+      console.error('Error creating swap request:', error);
     }
   };
 
@@ -102,9 +123,11 @@ export default function ExplorePage() {
         </div>
       </div>
 
-      <p className="text-sm text-gray-500">{filtered.length} skill provider{filtered.length !== 1 ? 's' : ''} found</p>
+      <p className="text-sm text-gray-500">
+        {filtered.length} skill provider{filtered.length !== 1 ? 's' : ''} found
+      </p>
 
-      {filtered.length === 0 && !loading ? (
+      {filtered.length === 0 ? (
         <div className="text-center py-20">
           <p className="text-4xl mb-4">🔍</p>
           <p className="text-gray-400">
@@ -115,8 +138,12 @@ export default function ExplorePage() {
         </div>
       ) : (
         <motion.div
-          variants={{ hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.1 } } }}
-          initial="hidden" animate="visible"
+          variants={{
+            hidden: { opacity: 0 },
+            visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
+          }}
+          initial="hidden"
+          animate="visible"
           className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5"
         >
           {filtered.map(u => {
@@ -124,7 +151,10 @@ export default function ExplorePage() {
             return (
               <motion.div
                 key={u.uid}
-                variants={{ hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 100 } } }}
+                variants={{
+                  hidden: { opacity: 0, y: 30 },
+                  visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 100 } }
+                }}
                 whileHover={{ y: -8, boxShadow: '0 0 20px rgba(59,130,246,0.5)' }}
                 className="glass-card p-5 flex flex-col"
               >
@@ -134,8 +164,10 @@ export default function ExplorePage() {
                       <img src={u.photoURL} alt={u.displayName}
                         className="w-14 h-14 rounded-2xl object-cover" />
                     ) : (
-                      <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold shrink-0"
-                        style={{ background: getAvatarColor(u.displayName) }}>
+                      <div
+                        className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold shrink-0"
+                        style={{ background: getAvatarColor(u.displayName) }}
+                      >
                         {u.displayName?.charAt(0) || '?'}
                       </div>
                     )}
@@ -158,7 +190,9 @@ export default function ExplorePage() {
                     <p className="text-xs text-gray-500 mb-1.5">Can teach:</p>
                     <div className="flex flex-wrap gap-1.5">
                       {(u.teachSkills || []).length > 0
-                        ? u.teachSkills.map(s => <span key={s} className="tag-green text-[11px]">{s}</span>)
+                        ? u.teachSkills.map(s => (
+                          <span key={s} className="tag-green text-[11px]">{s}</span>
+                        ))
                         : <span className="text-xs text-gray-600">No skills listed</span>}
                     </div>
                   </div>
@@ -166,7 +200,9 @@ export default function ExplorePage() {
                     <p className="text-xs text-gray-500 mb-1.5">Wants to learn:</p>
                     <div className="flex flex-wrap gap-1.5">
                       {(u.learnSkills || []).length > 0
-                        ? u.learnSkills.map(s => <span key={s} className="tag-blue text-[11px]">{s}</span>)
+                        ? u.learnSkills.map(s => (
+                          <span key={s} className="tag-blue text-[11px]">{s}</span>
+                        ))
                         : <span className="text-xs text-gray-600">No skills listed</span>}
                     </div>
                   </div>
@@ -175,10 +211,13 @@ export default function ExplorePage() {
                 <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/5">
                   <span className="text-sm text-gray-400">🔥 {u.streak || 0} day streak</span>
                   <motion.button
-                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.9 }}
                     onClick={() => handleRequest(u)}
                     disabled={isRequested}
-                    className={`flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg cursor-pointer border-none ${isRequested ? 'bg-neon-green/20 text-neon-green' : 'bg-electric/20 text-electric hover:bg-electric/30'
+                    className={`flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg cursor-pointer border-none ${isRequested
+                        ? 'bg-neon-green/20 text-neon-green'
+                        : 'bg-electric/20 text-electric hover:bg-electric/30'
                       }`}
                   >
                     <HiSwitchHorizontal size={16} />

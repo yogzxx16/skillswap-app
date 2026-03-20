@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { subscribeToChats } from '../services/chatService';
-import { getAvatarColor } from '../data/demoData';
+import { getAvatarColor } from '../utils/constants';
 import {
   HiHome, HiGlobe, HiSwitchHorizontal, HiChatAlt2,
   HiAcademicCap, HiChartBar, HiUser, HiLogout, HiMenu, HiX, HiRefresh

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { SKILL_OPTIONS } from '../data/demoData';
+import { SKILL_OPTIONS } from '../utils/constants';
 import { HiLightningBolt, HiX, HiArrowRight, HiSearch } from 'react-icons/hi';
 
 export default function OnboardingPage() {
