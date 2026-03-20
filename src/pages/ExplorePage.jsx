@@ -1,27 +1,11 @@
 import { useState, useEffect } from 'react';
 import { collection, getDocs, query, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { HiSearch, HiSwitchHorizontal } from 'react-icons/hi';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { createOrGetChat } from '../services/chatService';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import PageTransition from '../components/PageTransition';
-
-const AVATAR_COLORS = [
-  'linear-gradient(135deg,#667eea,#764ba2)',
-  'linear-gradient(135deg,#f093fb,#f5576c)',
-  'linear-gradient(135deg,#4facfe,#00f2fe)',
-  'linear-gradient(135deg,#43e97b,#38f9d7)',
-  'linear-gradient(135deg,#fa709a,#fee140)',
-  'linear-gradient(135deg,#a18cd1,#fbc2eb)',
-];
-
-function getAvatarColor(name) {
-  let hash = 0;
-  for (let i = 0; i < (name?.length || 0); i++) hash += name.charCodeAt(i);
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
-}
 
 export default function ExplorePage() {
   const [users, setUsers] = useState([]);
@@ -63,6 +47,8 @@ export default function ExplorePage() {
   });
 
   const handleRequest = async (targetUser) => {
+    if (requestedUsers.includes(targetUser.uid)) return;
+
     setRequestedUsers(prev => {
       const updated = [...prev, targetUser.uid];
       localStorage.setItem('skillswap_requested', JSON.stringify(updated));
@@ -93,142 +79,186 @@ export default function ExplorePage() {
     }
   };
 
+  const perfectMatch = filtered.length > 0 ? filtered[0] : null;
+  const otherUsers = filtered.slice(1);
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-electric border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Finding skill swappers near you...</p>
-        </div>
+      <div className="flex flex-col items-center justify-center h-[60vh] space-y-6">
+        <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="font-headline font-bold text-slate-500 uppercase tracking-widest text-xs animate-pulse">Loading Skills...</p>
       </div>
     );
   }
 
   return (
-    <PageTransition className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl lg:text-3xl font-bold text-white">Explore Skills</h1>
-          <p className="text-gray-400 mt-1">Find your perfect skill exchange partner</p>
+    <PageTransition className="space-y-12 pb-20">
+      {/* Header & Search */}
+      <section className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary text-sm">filter_alt</span>
+            <span className="font-mono text-[10px] tracking-[0.3em] text-primary uppercase">Explore</span>
+          </div>
+          <h1 className="font-headline font-black text-4xl md:text-5xl tracking-tighter uppercase italic">Explore Skills</h1>
+          <p className="font-label text-slate-500 uppercase tracking-widest text-[10px]">{users.length} skill providers found</p>
         </div>
-        <div className="relative w-full sm:w-72">
-          <HiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-          <input
-            type="text"
+        
+        <div className="relative w-full md:w-96 group">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-500 group-focus-within:text-primary transition-colors">search</span>
+          <input 
+            type="text" 
             value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search skills or people..."
-            className="w-full bg-navy-800 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder-gray-500 focus:outline-none focus:border-electric transition-colors text-sm"
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by skill or name" 
+            className="w-full h-14 bg-surface-container-high border-b-2 border-slate-800 focus:border-primary px-12 font-mono text-xs uppercase tracking-widest text-on-surface placeholder:text-slate-600 focus:outline-none transition-all"
           />
         </div>
-      </div>
+      </section>
 
-      <p className="text-sm text-gray-500">
-        {filtered.length} skill provider{filtered.length !== 1 ? 's' : ''} found
-      </p>
-
-      {filtered.length === 0 ? (
-        <div className="text-center py-20">
-          <p className="text-4xl mb-4">🔍</p>
-          <p className="text-gray-400">
-            {users.length === 0
-              ? 'No other users yet! Share the app and invite friends.'
-              : 'No results found. Try a different search term.'}
-          </p>
-        </div>
-      ) : (
-        <motion.div
-          variants={{
-            hidden: { opacity: 0 },
-            visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
-          }}
-          initial="hidden"
-          animate="visible"
-          className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5"
-        >
-          {filtered.map(u => {
-            const isRequested = requestedUsers.includes(u.uid);
-            return (
-              <motion.div
-                key={u.uid}
-                variants={{
-                  hidden: { opacity: 0, y: 30 },
-                  visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 100 } }
-                }}
-                whileHover={{ y: -8, boxShadow: '0 0 20px rgba(59,130,246,0.5)' }}
-                className="glass-card p-5 flex flex-col"
+      <AnimatePresence mode="wait">
+        {filtered.length === 0 ? (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="text-center py-20 bg-surface-container-low rounded-xl border border-white/5"
+          >
+            <span className="material-symbols-outlined text-6xl text-slate-800 mb-4 italic">error</span>
+            <p className="font-headline font-black text-xl text-slate-600 uppercase tracking-tighter">No skills found</p>
+            <button onClick={() => setSearch('')} className="mt-4 text-primary font-mono text-[10px] tracking-widest uppercase hover:underline">Clear Search</button>
+          </motion.div>
+        ) : (
+          <div className="space-y-12">
+            {/* Perfect Match Hero */}
+            {perfectMatch && !search && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                whileHover={{ y: -5 }}
+                className="relative overflow-hidden group rounded-2xl border-2 border-primary/40 shadow-[0_0_50px_rgba(133,173,255,0.2)] bg-surface-container-low p-1 mx-1"
               >
-                <div className="flex items-start gap-4 mb-4">
-                  <div className="relative">
-                    {u.photoURL ? (
-                      <img src={u.photoURL} alt={u.displayName}
-                        className="w-14 h-14 rounded-2xl object-cover" />
-                    ) : (
-                      <div
-                        className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold shrink-0"
-                        style={{ background: getAvatarColor(u.displayName) }}
-                      >
-                        {u.displayName?.charAt(0) || '?'}
+                <div className="absolute top-0 right-0 p-12 material-symbols-outlined text-primary/5 text-[240px] rotate-12 pointer-events-none">auto_awesome</div>
+                <div className="relative glass-panel rounded-2xl p-8 md:p-12 flex flex-col md:flex-row items-center gap-12">
+                  <div className="relative shrink-0">
+                    <div className="w-48 h-48 rounded-full border-4 border-primary p-2 relative group">
+                      <div className="absolute inset-0 rounded-full border-2 border-dashed border-primary/40 animate-[spin_10s_linear_infinite]"></div>
+                      <img 
+                        src={perfectMatch.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(perfectMatch.displayName)}&background=random`} 
+                        className="w-full h-full rounded-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" 
+                        alt={perfectMatch.displayName}
+                      />
+                      <div className="absolute -bottom-2 -right-2 bg-primary text-on-primary-fixed px-3 py-1 text-[8px] font-black uppercase tracking-tighter skew-x-[-12deg]">98% Match</div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex-1 space-y-6 text-center md:text-left">
+                    <div className="space-y-2">
+                       <h2 className="text-4xl md:text-5xl font-headline font-black tracking-tighter uppercase italic">{perfectMatch.displayName}</h2>
+                       <p className="font-mono text-xs text-primary tracking-[0.2em] uppercase">{perfectMatch.rank || 'Beginner'} • {perfectMatch.city || 'Global'}</p>
+                    </div>
+                    
+                    <div className="flex flex-wrap justify-center md:justify-start gap-4">
+                      <div className="space-y-2">
+                        <p className="font-label text-slate-500 uppercase tracking-widest text-[8px]">Teaching</p>
+                        <div className="flex gap-2">
+                          {perfectMatch.teachSkills?.slice(0, 3).map(s => (
+                            <span key={s} className="px-3 py-1 bg-white/5 border border-white/10 text-[10px] font-bold uppercase rounded-sm">{s}</span>
+                          ))}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-semibold text-white truncate">{u.displayName}</h3>
-                    <p className="text-xs text-gray-500">{u.city || 'Unknown city'}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-electric font-medium">{u.level || 'Beginner'}</span>
-                      <span className="text-xs text-gray-600">•</span>
-                      <span className="text-xs text-gray-400">⚡ {u.xp || 0} XP</span>
-                      <span className="text-xs text-gray-600">•</span>
-                      <span className="text-xs text-gray-400">🪙 {u.coins || 0}</span>
+                      <div className="space-y-2">
+                        <p className="font-label text-slate-500 uppercase tracking-widest text-[8px]">Learning</p>
+                        <div className="flex gap-2">
+                          {perfectMatch.learnSkills?.slice(0, 3).map(s => (
+                            <span key={s} className="px-3 py-1 bg-white/5 border border-white/10 text-[10px] font-bold uppercase rounded-sm text-secondary">{s}</span>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className="space-y-3 flex-1">
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1.5">Can teach:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(u.teachSkills || []).length > 0
-                        ? u.teachSkills.map(s => (
-                          <span key={s} className="tag-green text-[11px]">{s}</span>
-                        ))
-                        : <span className="text-xs text-gray-600">No skills listed</span>}
+                    <div className="pt-4 flex flex-col sm:flex-row gap-4">
+                      <button 
+                        onClick={() => handleRequest(perfectMatch)}
+                        disabled={requestedUsers.includes(perfectMatch.uid)}
+                        className="px-10 py-4 bg-primary text-on-primary-fixed font-headline font-black uppercase tracking-widest text-xs hover:scale-105 active:scale-95 transition-all shadow-[0_0_30px_rgba(133,173,255,0.4)] disabled:opacity-50 disabled:grayscale no-underline text-center"
+                      >
+                        {requestedUsers.includes(perfectMatch.uid) ? 'Requested' : 'Request Swap'}
+                      </button>
+                      <button onClick={() => navigate(`/profile/${perfectMatch.uid}`)} className="px-10 py-4 glass-panel border border-white/10 font-headline font-black uppercase tracking-widest text-xs hover:bg-white/5 transition-all text-center no-underline">View Profile</button>
                     </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1.5">Wants to learn:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(u.learnSkills || []).length > 0
-                        ? u.learnSkills.map(s => (
-                          <span key={s} className="tag-blue text-[11px]">{s}</span>
-                        ))
-                        : <span className="text-xs text-gray-600">No skills listed</span>}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/5">
-                  <span className="text-sm text-gray-400">🔥 {u.streak || 0} day streak</span>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => handleRequest(u)}
-                    disabled={isRequested}
-                    className={`flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg cursor-pointer border-none ${isRequested
-                        ? 'bg-neon-green/20 text-neon-green'
-                        : 'bg-electric/20 text-electric hover:bg-electric/30'
-                      }`}
-                  >
-                    <HiSwitchHorizontal size={16} />
-                    {isRequested ? 'Requested' : 'Request Swap'}
-                  </motion.button>
                 </div>
               </motion.div>
-            );
-          })}
-        </motion.div>
-      )}
+            )}
+
+            {/* Global Discovery Grid */}
+            <div className="space-y-8">
+               <h3 className="font-headline font-black text-sm uppercase tracking-[0.3em] flex items-center gap-4">
+                  Available Swappers
+                  <div className="h-px flex-1 bg-white/10"></div>
+               </h3>
+               
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                 {(search ? filtered : otherUsers).map((u, i) => {
+                   const isRequested = requestedUsers.includes(u.uid);
+                   
+                   return (
+                     <motion.div 
+                      key={u.uid}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      whileHover={{ y: -8 }}
+                      className="tilt-card glass-panel group p-6 rounded-xl border border-white/5 hover:border-white/20 transition-all cursor-pointer flex flex-col"
+                      onClick={() => navigate(`/profile/${u.uid}`)}
+                     >
+                       <div className="flex justify-between items-start mb-6">
+                         <div className="w-16 h-16 rounded-lg overflow-hidden border border-white/10">
+                           <img 
+                            src={u.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.displayName)}&background=random`} 
+                            className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" 
+                            alt={u.displayName}
+                           />
+                         </div>
+                         <div className={`px-2 py-1 border rounded-xs text-[8px] font-black uppercase tracking-tighter ${u.xp >= 3000 ? 'text-secondary border-secondary' : u.xp >= 1500 ? 'text-primary border-primary' : 'text-tertiary border-tertiary'}`}>
+                           {u.rank || (u.xp >= 3000 ? 'Master' : u.xp >= 1500 ? 'Expert' : u.xp >= 500 ? 'Intermediate' : 'Beginner')}
+                         </div>
+                       </div>
+                       
+                       <div className="space-y-4 flex-1">
+                         <div>
+                           <h4 className="font-headline font-black text-xl uppercase tracking-tight group-hover:text-primary transition-colors">{u.displayName}</h4>
+                           <p className="font-mono text-[9px] text-slate-500 uppercase tracking-widest">{u.city || 'Global'}</p>
+                         </div>
+                         
+                         <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/5">
+                           <div className="space-y-1">
+                             <p className="font-label text-slate-500 text-[8px] uppercase tracking-widest leading-none">Can teach</p>
+                             <p className="text-[10px] font-bold truncate leading-tight">{u.teachSkills?.[0] || 'N/A'}</p>
+                           </div>
+                           <div className="space-y-1 text-right">
+                             <p className="font-label text-slate-500 text-[8px] uppercase tracking-widest leading-none">Wants</p>
+                             <p className="text-[10px] font-bold truncate leading-tight text-secondary">{u.learnSkills?.[0] || 'N/A'}</p>
+                           </div>
+                         </div>
+                       </div>
+
+                       <button 
+                        onClick={(e) => { e.stopPropagation(); handleRequest(u); }}
+                        disabled={isRequested}
+                        className="mt-6 w-full py-3 bg-surface-container-highest group-hover:bg-primary group-hover:text-on-primary-fixed font-headline font-black text-[10px] uppercase tracking-[0.2em] transition-all disabled:opacity-50"
+                       >
+                         {isRequested ? 'Requested' : 'Request Swap'}
+                       </button>
+                     </motion.div>
+                   );
+                 })}
+               </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
     </PageTransition>
   );
 }

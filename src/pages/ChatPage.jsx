@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { HiPaperAirplane, HiDotsVertical, HiSearch } from 'react-icons/hi';
 import { subscribeToChats, subscribeToMessages, sendMessage, markChatAsRead, subscribeToUsersPresence } from '../services/chatService';
@@ -20,6 +21,7 @@ const getAvatarColor = (name) => {
 
 export default function ChatPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [chats, setChats] = useState([]);
   const [selectedChatId, setSelectedChatId] = useState(
     () => localStorage.getItem('skillswap_chatid') || null
@@ -176,7 +178,7 @@ export default function ChatPage() {
                 </div>
                 {otherOnline && <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-neon-green rounded-full border-2 border-navy-900" />}
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => navigate(`/profile/${otherId}`)}>
                 <p className="text-sm font-semibold text-white">{otherName}</p>
                 <p className="text-xs text-gray-500">{otherOnline ? '🟢 Online' : '⚫ Offline'}</p>
               </div>

@@ -1,292 +1,225 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { QUIZ_QUESTIONS } from '../utils/constants';
-import { HiAcademicCap, HiLightningBolt, HiClock, HiPhotograph, HiCheckCircle, HiXCircle } from 'react-icons/hi';
-
-const TABS = [
-  { id: 'quiz', label: '🧠 Quick Quiz', icon: HiAcademicCap },
-  { id: 'duel', label: '⚔️ Skill Duel', icon: HiLightningBolt },
-  { id: 'spaced', label: '🔄 Spaced Repetition', icon: HiClock },
-  { id: 'project', label: '📸 Mini Project', icon: HiPhotograph },
-];
+import { motion, AnimatePresence } from 'framer-motion';
+import PageTransition from '../components/PageTransition';
 
 export default function PracticeZonePage() {
   const { profile, updateProfile } = useAuth();
-  const [activeTab, setActiveTab] = useState('quiz');
-  const [selectedSkill, setSelectedSkill] = useState('');
-  const [quizState, setQuizState] = useState(null); // { q, answers, current, score, done }
-  const [duelState, setDuelState] = useState(null);
-  const [projectUploaded, setProjectUploaded] = useState(false);
+  const [duelState, setDuelState] = useState('IDLE'); // IDLE, SEARCHING, ACTIVE, COMPLETED
+  const [syncProgress, setSyncProgress] = useState(0);
+  const [logs, setLogs] = useState([
+    { id: 1, text: 'System: Initializing Practice Session...', type: 'info' },
+    { id: 2, text: 'System: Awaiting your input...', type: 'warning' }
+  ]);
 
-  const totalXP = profile?.xp || 0;
-  const practiceSkills = [...(profile?.teachSkills || []), ...(profile?.learnSkills || [])];
-
-  // Quiz Logic
-  const startQuiz = (skill) => {
-    const questions = QUIZ_QUESTIONS[skill] || QUIZ_QUESTIONS['JavaScript'];
-    setQuizState({ questions, current: 0, score: 0, done: false, selected: null, skill });
-    setSelectedSkill(skill);
+  const addLog = (text, type = 'info') => {
+    setLogs(prev => [...prev.slice(-4), { id: Date.now(), text: `Log: ${text}`, type }]);
   };
 
-  const answerQuiz = (idx) => {
-    if (quizState.selected !== null) return;
-    const isCorrect = idx === quizState.questions[quizState.current].answer;
-    const newScore = quizState.score + (isCorrect ? 1 : 0);
-
-    setQuizState(prev => ({ ...prev, selected: idx, score: newScore }));
-
-    setTimeout(() => {
-      if (quizState.current + 1 >= quizState.questions.length) {
-        const xpEarned = newScore * 20;
-        updateProfile({ xp: totalXP + xpEarned });
-        setQuizState(prev => ({ ...prev, done: true, xpEarned }));
-      } else {
-        setQuizState(prev => ({ ...prev, current: prev.current + 1, selected: null }));
-      }
-    }, 1000);
-  };
-
-  // Duel Logic
   const startDuel = () => {
-    setDuelState({ status: 'searching', opponent: null, round: 0, myScore: 0, oppScore: 0 });
+    setDuelState('SEARCHING');
+    addLog('Searching for partners...', 'info');
+    
     setTimeout(() => {
-      setDuelState(prev => ({
-        ...prev,
-        status: 'battling',
-        opponent: { name: 'Raj Patel', level: 'Master' },
-        round: 1,
-      }));
-    }, 2000);
+      setDuelState('ACTIVE');
+      addLog('Ready: Start practicing now', 'success');
+      setSyncProgress(15);
+    }, 2500);
   };
 
-  const duelAnswer = (correct) => {
-    const oppCorrect = Math.random() > 0.4;
-    setDuelState(prev => {
-      const newRound = prev.round + 1;
-      const myNew = prev.myScore + (correct ? 1 : 0);
-      const oppNew = prev.oppScore + (oppCorrect ? 1 : 0);
-      if (newRound > 5) {
-        const xpEarned = myNew > oppNew ? 100 : 30;
-        updateProfile({ xp: totalXP + xpEarned });
-        return { ...prev, myScore: myNew, oppScore: oppNew, status: 'done', xpEarned, won: myNew > oppNew };
-      }
-      return { ...prev, myScore: myNew, oppScore: oppNew, round: newRound };
-    });
+  const handleAction = (isCorrect) => {
+    if (isCorrect) {
+      setSyncProgress(prev => Math.min(prev + 20, 100));
+      addLog('Success: Progress +20%', 'success');
+    } else {
+      setSyncProgress(prev => Math.max(prev - 10, 0));
+      addLog('Error: Incorrect action -10%', 'error');
+    }
   };
 
-  // Spaced Repetition Data
-  const spacedItems = [
-    { skill: 'JavaScript Closures', dueIn: 'Due today', day: 1, status: 'due' },
-    { skill: 'React Hooks', dueIn: 'Due in 2 days', day: 3, status: 'upcoming' },
-    { skill: 'Python Decorators', dueIn: 'Due in 6 days', day: 7, status: 'upcoming' },
-    { skill: 'Guitar Chord Transitions', dueIn: 'Due in 20 days', day: 21, status: 'upcoming' },
-  ];
+  useEffect(() => {
+    if (syncProgress >= 100) {
+      setDuelState('COMPLETED');
+      addLog('Finished: Session complete!', 'success');
+      if (updateProfile) updateProfile({ xp: (profile?.xp || 0) + 150 });
+    }
+  }, [syncProgress, profile?.xp, updateProfile]);
 
   return (
-    <div className="space-y-6 fade-in">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl lg:text-3xl font-bold text-white">Practice Zone</h1>
-        <p className="text-gray-400 mt-1">Reinforce your skills and earn XP</p>
+    <PageTransition className="h-[calc(100vh-140px)] flex flex-col gap-6">
+      {/* Neural Sync Header */}
+      <section className="flex justify-between items-center">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="material-symbols-outlined text-tertiary text-xs animate-pulse">psychology</span>
+            <span className="font-mono text-[10px] tracking-[0.3em] text-tertiary uppercase">Practice Session</span>
+          </div>
+          <h1 className="font-headline font-black text-3xl uppercase italic tracking-tighter">Practice <span className="text-tertiary">Arena</span></h1>
+        </div>
+        <div className="flex gap-4">
+           <div className="glass-panel px-4 py-2 border-r-4 border-tertiary flex flex-col items-end">
+              <span className="font-mono text-[9px] text-slate-500 uppercase tracking-widest">Global Rank</span>
+              <span className="font-headline font-black text-lg">Top 4%</span>
+           </div>
+        </div>
+      </section>
+
+      {/* Main Duel Screen */}
+      <div className="flex-1 flex flex-col md:flex-row gap-6 relative">
+        <AnimatePresence mode="wait">
+          {duelState === 'IDLE' ? (
+            <motion.div 
+              key="idle"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="absolute inset-0 flex flex-col items-center justify-center text-center space-y-8 glass-panel border border-white/5 rounded-2xl"
+            >
+              <div className="w-32 h-32 rounded-full border-2 border-dashed border-tertiary/40 flex items-center justify-center animate-[spin_20s_linear_infinite]">
+                 <span className="material-symbols-outlined text-5xl text-tertiary">bolt</span>
+              </div>
+              <div className="space-y-2">
+                <h2 className="font-headline font-black text-4xl uppercase italic tracking-widest">Start Practice</h2>
+                <p className="font-mono text-[10px] text-slate-500 tracking-widest uppercase">Choose a skill to practice</p>
+              </div>
+              <div className="flex gap-4">
+                 <button onClick={startDuel} className="px-12 py-4 bg-tertiary text-on-tertiary-fixed font-headline font-black uppercase tracking-widest text-xs hover:scale-105 active:scale-95 transition-all">Start Session</button>
+                 <button className="px-12 py-4 glass-panel border border-white/10 font-headline font-black uppercase tracking-widest text-xs hover:bg-white/5 transition-all">Leaderboard</button>
+              </div>
+            </motion.div>
+          ) : duelState === 'SEARCHING' ? (
+            <motion.div 
+              key="searching"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 flex flex-col items-center justify-center text-center space-y-8 glass-panel border border-white/5 rounded-2xl"
+            >
+              <div className="w-24 h-24 relative">
+                <div className="absolute inset-0 border-4 border-tertiary border-t-transparent rounded-full animate-spin"></div>
+                <div className="absolute inset-4 border-2 border-secondary border-b-transparent rounded-full animate-[spin_1.5s_linear_infinite_reverse]"></div>
+              </div>
+              <div className="space-y-1">
+                <h2 className="font-headline font-black text-2xl uppercase italic tracking-widest animate-pulse">Setting up...</h2>
+                <p className="font-mono text-[9px] text-slate-500 tracking-widest uppercase italic">Connecting to your learning path</p>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div 
+              key="active"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex-1 flex flex-col md:flex-row gap-6 w-full"
+            >
+              {/* Left Column: OPERATOR */}
+              <div className="flex-1 glass-panel rounded-2xl p-8 border-l-4 border-primary/40 relative overflow-hidden flex flex-col justify-between">
+                <div className="absolute top-0 left-0 p-4 font-mono text-[8px] text-primary/40 tracking-widest">YOU</div>
+                <div className="shrink-0 flex justify-between items-start">
+                  <div>
+                     <h3 className="font-headline font-black text-4xl italic uppercase">{profile?.displayName?.split(' ')[0] || 'USER'}</h3>
+                     <p className="font-mono text-[10px] text-primary">{profile?.rank || 'Beginner'}</p>
+                  </div>
+                  <div className="flex gap-1">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className={`h-1 w-4 rounded-full ${i < Math.floor(syncProgress / 20) ? 'bg-primary' : 'bg-white/10'}`}></div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex-1 flex items-center justify-center">
+                   <div className="w-48 h-48 rounded-full border-8 border-white/5 relative flex items-center justify-center">
+                      <svg className="absolute inset-0 w-full h-full -rotate-90">
+                        <circle cx="50%" cy="50%" r="46%" className="stroke-white/5 fill-none" strokeWidth="8"/>
+                        <motion.circle 
+                          cx="50%" cy="50%" r="46%" 
+                          className="stroke-primary fill-none shadow-[0_0_20px_rgba(133,173,255,0.5)]" 
+                          strokeWidth="8"
+                          strokeDasharray="100"
+                          initial={{ strokeDashoffset: 100 }}
+                          animate={{ strokeDashoffset: 100 - syncProgress }}
+                        />
+                      </svg>
+                      <span className="font-headline font-black text-4xl">{syncProgress}<span className="text-xs text-primary">%</span></span>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                   <button onClick={() => handleAction(true)} className="py-4 bg-primary/20 border border-primary/40 hover:bg-primary/40 text-on-primary-fixed font-headline font-black uppercase text-[10px] tracking-widest transition-all">Correct Action</button>
+                   <button onClick={() => handleAction(false)} className="py-4 bg-white/5 border border-white/10 hover:bg-white/10 text-slate-400 font-headline font-black uppercase text-[10px] tracking-widest transition-all">Incorrect Action</button>
+                </div>
+              </div>
+
+              {/* Center V/S Overlay (MD Only) */}
+              <div className="hidden md:flex absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-lg bg-surface-container border-2 border-tertiary items-center justify-center font-headline font-black italic shadow-[0_0_40px_rgba(255,163,133,0.3)] z-10">
+                VS
+              </div>
+
+              {/* Right Column: AI / OPPONENT */}
+              <div className="flex-1 glass-panel rounded-2xl p-8 border-r-4 border-secondary/40 relative overflow-hidden flex flex-col justify-between">
+                <div className="absolute top-0 right-0 p-4 font-mono text-[8px] text-secondary/40 tracking-widest text-right">OPPONENT: AI</div>
+                <div className="shrink-0 flex justify-between items-start flex-row-reverse">
+                  <div className="text-right">
+                     <h3 className="font-headline font-black text-4xl italic uppercase text-secondary">AI BOT</h3>
+                     <p className="font-mono text-[10px] text-secondary">Level 1</p>
+                  </div>
+                  <div className="flex gap-1">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className={`h-1 w-4 rounded-full ${i < 3 ? 'bg-secondary' : 'bg-white/10'}`}></div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex-1 flex items-center justify-center">
+                   <div className="w-48 h-48 rounded-full border-8 border-white/5 relative flex items-center justify-center opacity-40">
+                      <div className="absolute inset-0 bg-secondary/5 blur-2xl rounded-full"></div>
+                      <span className="material-symbols-outlined text-6xl text-secondary animate-pulse">memory</span>
+                   </div>
+                </div>
+
+                <div className="p-4 bg-secondary/5 border border-secondary/20 rounded-lg">
+                   <div className="flex justify-between items-center mb-2">
+                     <span className="font-mono text-[8px] text-secondary uppercase">AI Difficulty</span>
+                     <span className="font-headline font-bold text-xs">Medium</span>
+                   </div>
+                   <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-secondary w-[50%]"></div>
+                   </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* XP Bar */}
-      <div className="glass-card p-4 flex items-center gap-4">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-green/20 to-electric/20 flex items-center justify-center shrink-0">
-          <HiLightningBolt className="text-electric" size={20} />
+      {/* Terminal Footer (Neural Log) */}
+      <footer className="h-48 glass-panel rounded-xl border-t-2 border-t-tertiary p-6 flex gap-8">
+        <div className="flex-1 font-mono text-[10px] space-y-2 overflow-y-auto pr-4 custom-scrollbar">
+          {logs.map((log) => (
+            <div key={log.id} className={`flex gap-4 ${log.type === 'error' ? 'text-secondary' : log.type === 'success' ? 'text-primary' : log.type === 'warning' ? 'text-tertiary' : 'text-slate-500'}`}>
+               <span className="opacity-50">[{new Date(log.id).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}]</span>
+               <span className="uppercase tracking-widest">{log.text}</span>
+            </div>
+          ))}
+          <div className="animate-pulse text-tertiary">_</div>
         </div>
-        <div className="flex-1">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm font-semibold text-white">Practice XP</span>
-            <span className="text-sm text-electric font-bold">⚡ {totalXP} XP</span>
-          </div>
-          <div className="w-full h-2 bg-navy-800 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-neon-green to-electric rounded-full transition-all duration-500" style={{ width: `${Math.min((totalXP / 5000) * 100, 100)}%` }} />
-          </div>
+        
+        <div className="w-1/3 border-l border-white/5 pl-8 hidden lg:block">
+           <div className="space-y-4">
+              <h4 className="font-headline font-bold text-xs uppercase tracking-widest text-slate-500 italic">Consistency</h4>
+              <div className="flex items-end gap-2">
+                 {[40, 70, 45, 90, 65, 30, 85, 95].map((v, i) => (
+                   <div key={i} className="flex-1 bg-surface-container-highest rounded-t-xs relative h-12">
+                      <motion.div 
+                        initial={{ height: 0 }}
+                        animate={{ height: `${v}%` }}
+                        className="absolute bottom-0 inset-x-0 bg-tertiary/40"
+                      />
+                   </div>
+                 ))}
+              </div>
+           </div>
         </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setActiveTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all border-none cursor-pointer ${
-              activeTab === t.id
-                ? 'bg-electric/20 text-electric'
-                : 'text-gray-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === 'quiz' && (
-        <div className="space-y-4">
-          {!quizState ? (
-            <>
-              <h3 className="text-lg font-semibold text-white">Select a skill to quiz on:</h3>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {['JavaScript', 'Python', 'React', 'Guitar'].map(skill => (
-                  <button
-                    key={skill}
-                    onClick={() => startQuiz(skill)}
-                    className="glass-card p-5 text-left hover:border-electric/30 transition-all group cursor-pointer border-white/10"
-                  >
-                    <h4 className="text-white font-semibold group-hover:text-electric transition-colors">{skill}</h4>
-                    <p className="text-xs text-gray-500 mt-1">5 questions • +20 XP each</p>
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : quizState.done ? (
-            <div className="glass-card p-8 text-center">
-              <p className="text-5xl mb-4">{quizState.score >= 4 ? '🎉' : quizState.score >= 2 ? '👍' : '📚'}</p>
-              <h3 className="text-2xl font-bold text-white mb-2">Quiz Complete!</h3>
-              <p className="text-gray-400 mb-2">{quizState.skill} • Score: {quizState.score}/{quizState.questions.length}</p>
-              <p className="text-neon-green font-bold text-lg mb-6">+{quizState.xpEarned} XP earned!</p>
-              <button onClick={() => setQuizState(null)} className="btn-primary">Try Another Quiz</button>
-            </div>
-          ) : (
-            <div className="glass-card p-6">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm text-gray-400">Question {quizState.current + 1}/{quizState.questions.length}</span>
-                <span className="text-sm text-neon-green font-medium">Score: {quizState.score}</span>
-              </div>
-              <div className="w-full h-1.5 bg-navy-800 rounded-full mb-6 overflow-hidden">
-                <div className="h-full bg-electric rounded-full transition-all" style={{ width: `${((quizState.current + 1) / quizState.questions.length) * 100}%` }} />
-              </div>
-              <h3 className="text-lg font-semibold text-white mb-6">{quizState.questions[quizState.current].q}</h3>
-              <div className="grid gap-3">
-                {quizState.questions[quizState.current].options.map((opt, i) => {
-                  const isAnswer = i === quizState.questions[quizState.current].answer;
-                  const isSelected = quizState.selected === i;
-                  let btnClass = 'bg-white/5 text-gray-300 hover:bg-white/10 border border-white/10';
-                  if (quizState.selected !== null) {
-                    if (isAnswer) btnClass = 'bg-neon-green/20 text-neon-green border border-neon-green/30';
-                    else if (isSelected) btnClass = 'bg-red-500/20 text-red-400 border border-red-500/30';
-                  }
-                  return (
-                    <button key={i} onClick={() => answerQuiz(i)} className={`p-4 rounded-xl text-left text-sm font-medium transition-all cursor-pointer ${btnClass} flex items-center gap-3`}>
-                      <span className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 text-xs">{String.fromCharCode(65 + i)}</span>
-                      {opt}
-                      {quizState.selected !== null && isAnswer && <HiCheckCircle className="ml-auto text-neon-green" size={20} />}
-                      {quizState.selected !== null && isSelected && !isAnswer && <HiXCircle className="ml-auto text-red-400" size={20} />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'duel' && (
-        <div className="space-y-4">
-          {!duelState ? (
-            <div className="glass-card p-8 text-center">
-              <p className="text-5xl mb-4">⚔️</p>
-              <h3 className="text-2xl font-bold text-white mb-2">Skill Duel</h3>
-              <p className="text-gray-400 mb-6">Challenge another user to a live quiz battle! Winner gets 100 XP.</p>
-              <button onClick={startDuel} className="btn-primary">Find Opponent</button>
-            </div>
-          ) : duelState.status === 'searching' ? (
-            <div className="glass-card p-8 text-center">
-              <div className="w-16 h-16 rounded-full border-4 border-electric border-t-transparent animate-spin mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-white mb-2">Finding opponent...</h3>
-              <p className="text-gray-400">Matching you with a worthy challenger</p>
-            </div>
-          ) : duelState.status === 'done' ? (
-            <div className="glass-card p-8 text-center">
-              <p className="text-5xl mb-4">{duelState.won ? '🏆' : '💪'}</p>
-              <h3 className="text-2xl font-bold text-white mb-2">{duelState.won ? 'You Won!' : 'Good Fight!'}</h3>
-              <p className="text-gray-400 mb-2">You: {duelState.myScore} vs {duelState.opponent.name}: {duelState.oppScore}</p>
-              <p className="text-neon-green font-bold text-lg mb-6">+{duelState.xpEarned} XP earned!</p>
-              <button onClick={() => setDuelState(null)} className="btn-primary">Play Again</button>
-            </div>
-          ) : (
-            <div className="glass-card p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div className="text-center">
-                  <p className="text-sm text-gray-400">You</p>
-                  <p className="text-2xl font-bold text-electric">{duelState.myScore}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-gray-500">Round {duelState.round}/5</p>
-                  <p className="text-2xl">⚔️</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-gray-400">{duelState.opponent.name}</p>
-                  <p className="text-2xl font-bold text-neon-pink">{duelState.oppScore}</p>
-                </div>
-              </div>
-              <h3 className="text-lg font-semibold text-white mb-4 text-center">Do you know the answer?</h3>
-              <div className="flex gap-4 justify-center">
-                <button onClick={() => duelAnswer(true)} className="btn-primary px-8">I Know It! ✓</button>
-                <button onClick={() => duelAnswer(false)} className="btn-secondary px-8">Skip ✗</button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'spaced' && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-white">Spaced Repetition Schedule</h3>
-          <p className="text-sm text-gray-400">Review at day 1, 3, 7, and 21 for optimal retention.</p>
-          <div className="space-y-3">
-            {spacedItems.map((item, i) => (
-              <div key={i} className={`glass-card p-4 flex items-center gap-4 ${item.status === 'due' ? 'border-neon-orange/30' : ''}`}>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                  item.status === 'due' ? 'bg-neon-orange/20 text-neon-orange' : 'bg-white/5 text-gray-500'
-                }`}>
-                  <span className="text-sm font-bold">D{item.day}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white">{item.skill}</p>
-                  <p className="text-xs text-gray-500">{item.dueIn}</p>
-                </div>
-                <button className={`text-sm font-medium px-4 py-2 rounded-lg transition-all border-none cursor-pointer ${
-                  item.status === 'due'
-                    ? 'bg-neon-orange/20 text-neon-orange hover:bg-neon-orange/30'
-                    : 'bg-white/5 text-gray-500'
-                }`}>
-                  {item.status === 'due' ? 'Review Now' : 'Scheduled'}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'project' && (
-        <div className="space-y-4">
-          {!projectUploaded ? (
-            <div className="glass-card p-8 text-center border-dashed border-2 border-white/10 hover:border-electric/30 transition-colors">
-              <HiPhotograph className="mx-auto text-gray-500 mb-4" size={48} />
-              <h3 className="text-xl font-bold text-white mb-2">Upload Mini Project</h3>
-              <p className="text-gray-400 mb-6">Share a photo or screenshot proving you practiced a skill.</p>
-              <button
-                onClick={() => { setProjectUploaded(true); updateProfile({ xp: totalXP + 50 }); }}
-                className="btn-primary"
-              >
-                📸 Upload Photo (+50 XP)
-              </button>
-            </div>
-          ) : (
-            <div className="glass-card p-8 text-center">
-              <p className="text-5xl mb-4">🎉</p>
-              <h3 className="text-2xl font-bold text-white mb-2">Project Uploaded!</h3>
-              <p className="text-neon-green font-bold text-lg mb-4">+50 XP earned!</p>
-              <p className="text-gray-400 mb-6">Your mini project has been added to your portfolio.</p>
-              <button onClick={() => setProjectUploaded(false)} className="btn-secondary">Upload Another</button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+      </footer>
+    </PageTransition>
   );
 }

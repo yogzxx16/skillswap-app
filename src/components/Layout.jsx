@@ -2,21 +2,21 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { subscribeToChats } from '../services/chatService';
-import { getAvatarColor } from '../utils/constants';
-import {
-  HiHome, HiGlobe, HiSwitchHorizontal, HiChatAlt2,
-  HiAcademicCap, HiChartBar, HiUser, HiLogout, HiMenu, HiX, HiRefresh
-} from 'react-icons/hi';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const navItems = [
-  { path: '/dashboard', icon: HiHome, label: 'Dashboard' },
-  { path: '/explore', icon: HiGlobe, label: 'Explore' },
-  { path: '/swaps', icon: HiSwitchHorizontal, label: 'Swaps' },
-  { path: '/chat', icon: HiChatAlt2, label: 'Chat' },
-  { path: '/practice', icon: HiAcademicCap, label: 'Practice' },
-  { path: '/leaderboard', icon: HiChartBar, label: 'Leaderboard' },
-  { path: '/profile', icon: HiUser, label: 'Profile' },
+  { path: '/explore', icon: 'explore', label: 'Explore' },
+  { path: '/practice', icon: 'fitness_center', label: 'Practice' },
+  { path: '/leaderboard', icon: 'leaderboard', label: 'Leaderboard' },
+  { path: '/profile', icon: 'person', label: 'Profile' },
+];
+
+const sideNavItems = [
+  { path: '/dashboard', icon: 'home', label: 'Home' },
+  { path: '/explore', icon: 'search', label: 'Explore Skills' },
+  { path: '/practice', icon: 'exercise', label: 'Practice' },
+  { path: '/leaderboard', icon: 'leaderboard', label: 'Leaderboard' },
+  { path: '/profile', icon: 'person', label: 'Profile' },
 ];
 
 export default function Layout({ children }) {
@@ -42,129 +42,135 @@ export default function Layout({ children }) {
     navigate('/');
   };
 
-  const avatarColor = getAvatarColor(profile?.displayName || 'User');
+  // Skip layout for landing page or auth page if needed, but usually Layout is used for internal pages.
+  // The mockup shows specific layouts for Landing and Dashboard.
+  // I will assume Layout is for internal authenticated pages.
+  const isLandingPage = location.pathname === '/';
+  
+  if (isLandingPage) {
+    return <>{children}</>;
+  }
 
   return (
-    <div className="flex min-h-screen bg-navy-950">
-      {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-navy-950/60 backdrop-blur-2xl border-b border-white/5 shadow-[0_4px_30px_rgba(0,0,0,0.1)] px-4 py-3 flex items-center justify-between">
-        <button onClick={() => setSidebarOpen(!sidebarOpen)} className="text-white p-2 hover:bg-white/10 rounded-lg transition-colors">
-          {sidebarOpen ? <HiX size={24} /> : <HiMenu size={24} />}
-        </button>
-        <div className="flex items-center gap-2">
-          <motion.div
-            whileHover={{ rotate: 360, transition: { repeat: Infinity, duration: 4, ease: "linear" } }}
+    <div className="min-h-screen bg-background text-on-background font-body selection:bg-primary/30">
+      {/* TopAppBar */}
+      <header className="fixed top-0 w-full z-50 border-b border-white/10 bg-slate-950/60 backdrop-blur-xl shadow-[0_0_20px_rgba(59,130,246,0.15)] h-20 flex justify-between items-center px-4 md:px-8">
+        <div className="flex items-center gap-4 md:gap-8">
+          <button 
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="lg:hidden p-2 text-slate-400 hover:text-white"
           >
-            <HiRefresh className="text-electric" size={24} />
-          </motion.div>
-          <span className="font-bold text-lg bg-gradient-to-r from-electric to-neon-purple bg-clip-text text-transparent">SkillSwap</span>
-        </div>
-        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ background: avatarColor }}>
-          {profile?.displayName?.charAt(0) || 'U'}
-        </div>
-      </div>
-
-      {/* Sidebar */}
-      <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-navy-950/60 backdrop-blur-2xl border-r border-white/5 shadow-[4px_0_24px_rgba(0,0,0,0.2)] transform transition-transform duration-300 cubic-bezier(0.16, 1, 0.3, 1) ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 flex flex-col`}>
-        {/* Logo */}
-        <div className="px-6 py-6 border-b border-white/10">
-          <Link to="/dashboard" className="flex items-center gap-3 no-underline" onClick={() => setSidebarOpen(false)}>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-electric to-neon-purple flex items-center justify-center">
-              <motion.div
-                whileHover={{ rotate: 360, transition: { repeat: Infinity, duration: 4, ease: "linear" } }}
+            <span className="material-symbols-outlined">{sidebarOpen ? 'close' : 'menu'}</span>
+          </button>
+          
+          <Link to="/dashboard" className="text-2xl font-black bg-gradient-to-r from-blue-500 to-cyan-400 bg-clip-text text-transparent font-headline tracking-tighter no-underline">
+            SkillSwap
+          </Link>
+          
+          <nav className="hidden md:flex items-center space-x-8 font-headline font-bold uppercase tracking-widest text-[10px]">
+            {navItems.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`transition-colors no-underline ${
+                  location.pathname === item.path 
+                    ? 'text-blue-400 border-b-2 border-blue-500 pb-1' 
+                    : 'text-slate-400 hover:text-slate-100'
+                }`}
               >
-                <HiRefresh className="text-white" size={22} />
-              </motion.div>
-            </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-electric to-neon-purple bg-clip-text text-transparent">SkillSwap</span>
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+
+        <div className="flex items-center space-x-3 md:space-x-6">
+          <button className="material-symbols-outlined text-slate-400 hover:text-primary transition-all duration-300 hover:scale-105">
+            notifications
+          </button>
+          <Link to="/chat" className="relative material-symbols-outlined text-slate-400 hover:text-primary transition-all duration-300 hover:scale-105 no-underline">
+            chat_bubble
+            {totalUnread > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-error text-on-error rounded-full text-[8px] flex items-center justify-center font-bold">
+                {totalUnread}
+              </span>
+            )}
+          </Link>
+          <Link to="/profile" className="w-10 h-10 rounded-full border-2 border-secondary-fixed p-0.5 overflow-hidden block">
+            <img 
+              src={profile?.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.displayName || 'U')}&background=random`} 
+              alt="Profile" 
+              className="w-full h-full rounded-full object-cover" 
+            />
           </Link>
         </div>
+      </header>
 
-        {/* User Card */}
-        <div className="px-4 py-4">
-          <div className="glass-card p-3 flex items-center gap-3">
-            {profile?.photoURL ? (
-              <img src={profile.photoURL} alt="Profile" className="w-10 h-10 rounded-full object-cover shrink-0" />
-            ) : (
-              <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: avatarColor }}>
-                {profile?.displayName?.charAt(0) || 'U'}
-              </div>
-            )}
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-white truncate">{profile?.displayName}</p>
-              {profile?.email && <p className="text-[10px] text-gray-400 truncate">{profile.email}</p>}
-              <p className="text-xs text-electric mt-0.5">{profile?.level || 'Beginner'} • {profile?.xp || 0} XP</p>
+      {/* SideNavBar */}
+      <aside className={`fixed left-0 top-0 flex flex-col py-8 px-4 h-full w-72 border-r border-white/5 bg-slate-950/80 backdrop-blur-2xl z-40 pt-24 transition-transform duration-300 transform lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="mb-10 px-4">
+          <div className="flex items-center gap-3 p-3 bg-surface-container rounded-xl border border-outline-variant/10">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-on-primary-fixed shadow-[0_0_15px_rgba(133,173,255,0.4)]">
+              <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>military_tech</span>
+            </div>
+            <div>
+              <h3 className="font-headline font-black text-on-surface text-lg leading-none">Level {profile?.level || 1}</h3>
+              <p className="font-label text-[10px] text-secondary uppercase tracking-widest mt-1">{profile?.rank || 'Beginner'}</p>
             </div>
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-2 space-y-1">
-          {navItems.map(({ path, icon: Icon, label }) => {
-            const isActive = location.pathname === path;
+        <nav className="flex-1 space-y-2">
+          {sideNavItems.map((item) => {
+            const isActive = location.pathname === item.path;
             return (
               <Link
-                key={path}
-                to={path}
+                key={item.path}
+                to={item.path}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 no-underline ${
-                  isActive
-                    ? 'bg-electric/20 text-electric border border-electric/30'
-                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                className={`flex items-center gap-4 py-3 px-4 rounded-lg transition-all duration-300 no-underline hover:translate-x-2 ${
+                  isActive 
+                    ? 'bg-blue-500/10 text-blue-400 border-r-4 border-blue-500 shadow-[10px_0_15px_-5px_rgba(59,130,246,0.4)]' 
+                    : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <Icon size={20} />
-                  {label}
-                </div>
-                {label === 'Chat' && totalUnread > 0 && (
-                  <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center text-[10px] text-white font-bold shrink-0">
-                    {totalUnread}
-                  </div>
-                )}
+                <span className="material-symbols-outlined">{item.icon}</span>
+                <span className="font-headline font-medium uppercase tracking-widest text-xs">{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
-        {/* Stats Quick View */}
-        <div className="px-4 py-3 border-t border-white/10">
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div>
-              <p className="text-lg font-bold text-white">🔥 {profile?.streak || 0}</p>
-              <p className="text-[10px] text-gray-500">Streak</p>
+        <div className="mt-auto pt-6 border-t border-white/5">
+          <div className="flex justify-around py-4">
+            <div className="relative group">
+              <button className="material-symbols-outlined text-slate-600 hover:text-on-surface transition-colors">help</button>
+              <div className="absolute left-full ml-4 top-1/2 -translate-y-1/2 w-64 p-4 glass-panel border border-white/10 text-[10px] leading-relaxed text-slate-300 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 pointer-events-none shadow-2xl">
+                <p className="font-headline font-black text-primary uppercase tracking-widest mb-1 text-[8px]">SkillSwap Guide</p>
+                SkillSwap — Trade your skills, learn new ones. Teach what you know and learn what you don't — completely free, no money involved. Find a swap partner → Chat → Exchange skills → Practice what you learned → Earn XP and badges!
+              </div>
             </div>
-            <div>
-              <p className="text-lg font-bold text-white">🪙 {profile?.coins || 0}</p>
-              <p className="text-[10px] text-gray-500">Coins</p>
-            </div>
-            <div>
-              <p className="text-lg font-bold text-white">⚡ {profile?.xp || 0}</p>
-              <p className="text-[10px] text-gray-500">XP</p>
-            </div>
+            <button onClick={handleLogout} className="material-symbols-outlined text-slate-600 hover:text-error transition-colors">logout</button>
           </div>
-        </div>
-
-        {/* Logout */}
-        <div className="px-3 py-4 border-t border-white/10">
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200 w-full"
-          >
-            <HiLogout size={20} />
-            Sign Out
-          </button>
         </div>
       </aside>
 
-      {/* Overlay for mobile */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
+      {/* Mobile Overlay */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSidebarOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
+          />
+        )}
+      </AnimatePresence>
 
       {/* Main Content */}
-      <main className="flex-1 lg:ml-0 mt-14 lg:mt-0 overflow-y-auto">
-        <div className="p-4 lg:p-8 max-w-7xl mx-auto">
+      <main className="lg:ml-72 pt-28 px-4 md:px-10 pb-12 min-h-screen">
+        <div className="max-w-7xl mx-auto">
           {children}
         </div>
       </main>

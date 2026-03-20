@@ -1,171 +1,79 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { HiPencil, HiShare, HiX, HiPlus, HiCheck } from 'react-icons/hi';
-
-const LEVEL_THRESHOLDS = [
-  { label: 'Beginner', min: 0, max: 500 },
-  { label: 'Intermediate', min: 500, max: 1500 },
-  { label: 'Expert', min: 1500, max: 3000 },
-  { label: 'Master', min: 3000, max: 5000 },
-];
-
-function getLevelInfo(xp) {
-  const current = LEVEL_THRESHOLDS.find(l => xp >= l.min && xp < l.max) || LEVEL_THRESHOLDS[3];
-  const nextIdx = LEVEL_THRESHOLDS.indexOf(current) + 1;
-  const next = LEVEL_THRESHOLDS[nextIdx] || current;
-  return { label: next.label, current: xp - current.min, next: current.max - current.min };
-}
-
-const AVATAR_COLORS = [
-  'linear-gradient(135deg,#667eea,#764ba2)',
-  'linear-gradient(135deg,#f093fb,#f5576c)',
-  'linear-gradient(135deg,#4facfe,#00f2fe)',
-  'linear-gradient(135deg,#43e97b,#38f9d7)',
-  'linear-gradient(135deg,#fa709a,#fee140)',
-  'linear-gradient(135deg,#a18cd1,#fbc2eb)',
-];
-
-function getAvatarColor(name) {
-  let hash = 0;
-  for (let i = 0; i < (name?.length || 0); i++) hash += name.charCodeAt(i);
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
-}
-
-// ── Skill Tag Input ──────────────────────────────────────────
-function SkillTagInput({ skills, onChange, color = 'green' }) {
-  const [input, setInput] = useState('');
-
-  const add = () => {
-    const val = input.trim();
-    if (val && !skills.includes(val) && skills.length < 5) {
-      onChange([...skills, val]);
-      setInput('');
-    }
-  };
-
-  const remove = (s) => onChange(skills.filter(x => x !== s));
-
-  return (
-    <div>
-      <div className="flex flex-wrap gap-2 mb-2">
-        {skills.map(s => (
-          <span key={s}
-            className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${color === 'green' ? 'bg-neon-green/20 text-neon-green' : 'bg-electric/20 text-electric'
-              }`}>
-            {s}
-            <button onClick={() => remove(s)}
-              className="hover:opacity-70 bg-transparent border-none cursor-pointer p-0 leading-none">
-              <HiX size={10} />
-            </button>
-          </span>
-        ))}
-        {skills.length === 0 && (
-          <span className="text-xs text-gray-600">No skills added yet</span>
-        )}
-      </div>
-      {skills.length < 5 && (
-        <div className="flex gap-2">
-          <input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && add()}
-            placeholder="Type a skill + Enter"
-            className="flex-1 bg-navy-800 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-electric"
-          />
-          <button onClick={add}
-            className="bg-electric/20 text-electric border border-electric/30 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-electric/30 transition-colors">
-            <HiPlus size={14} />
-          </button>
-        </div>
-      )}
-      <p className="text-[10px] text-gray-600 mt-1">{skills.length}/5 skills</p>
-    </div>
-  );
-}
+import { auth, db } from '../firebase';
+import { updateProfile as updateAuthProfile } from 'firebase/auth';
+import { collection, query, where, getDocs, orderBy, doc, updateDoc } from 'firebase/firestore';
+import { motion, AnimatePresence } from 'framer-motion';
+import PageTransition from '../components/PageTransition';
 
 // ── Edit Modal ───────────────────────────────────────────────
 function EditModal({ profile, onSave, onClose }) {
   const [city, setCity] = useState(profile?.city || '');
-  const [teachSkills, setTeachSkills] = useState(profile?.teachSkills || []);
-  const [learnSkills, setLearnSkills] = useState(profile?.learnSkills || []);
+  const [teachSkills, setTeachSkills] = useState(profile?.teachSkills?.join(', ') || '');
+  const [learnSkills, setLearnSkills] = useState(profile?.learnSkills?.join(', ') || '');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
-    await onSave({ city, teachSkills, learnSkills });
+    await onSave({ 
+      city, 
+      teachSkills: teachSkills.split(',').map(s => s.trim()).filter(Boolean), 
+      learnSkills: learnSkills.split(',').map(s => s.trim()).filter(Boolean) 
+    });
     setSaving(false);
     onClose();
   };
 
   return (
-    <div
-      style={{ minHeight: 400, background: 'rgba(0,0,0,0.7)' }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onClick={e => e.target === e.currentTarget && onClose()}
-    >
-      <div className="bg-[#0f172a] border border-white/10 rounded-2xl p-6 w-full max-w-md space-y-5 relative">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white">Edit Profile</h2>
-          <button onClick={onClose}
-            className="text-gray-400 hover:text-white bg-transparent border-none cursor-pointer p-1">
-            <HiX size={20} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md">
+       <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="glass-panel w-full max-w-lg border-2 border-primary/20 p-8 space-y-6"
+       >
+          <div className="flex justify-between items-center bg-surface-container-high -mx-8 -mt-8 p-6 border-b border-primary/20">
+             <h2 className="font-headline font-black text-xl uppercase italic tracking-widest text-primary">Edit Profile</h2>
+             <button onClick={onClose} className="material-symbols-outlined text-slate-500 hover:text-white transition-colors">close</button>
+          </div>
+
+          <div className="space-y-4 pt-4">
+             <div className="space-y-2">
+                <label className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Your City</label>
+                <input 
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  className="w-full bg-surface-container-high border-b border-slate-700 py-3 px-4 focus:border-primary outline-none transition-all font-mono text-xs uppercase"
+                  placeholder="Enter your city"
+                />
+             </div>
+             <div className="space-y-2">
+                <label className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Teaching (Comma separated)</label>
+                <input 
+                  value={teachSkills}
+                  onChange={(e) => setTeachSkills(e.target.value)}
+                  className="w-full bg-surface-container-high border-b border-slate-700 py-3 px-4 focus:border-primary outline-none transition-all font-mono text-xs uppercase text-primary"
+                  placeholder="Cooking, Guitar, Physics"
+                />
+             </div>
+             <div className="space-y-2">
+                <label className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Learning (Comma separated)</label>
+                <input 
+                  value={learnSkills}
+                  onChange={(e) => setLearnSkills(e.target.value)}
+                  className="w-full bg-surface-container-high border-b border-slate-700 py-3 px-4 focus:border-primary outline-none transition-all font-mono text-xs uppercase text-secondary"
+                  placeholder="Spanish, Coding, Chess"
+                />
+             </div>
+          </div>
+
+          <button 
+             onClick={handleSave}
+             disabled={saving}
+             className="w-full py-4 bg-primary text-on-primary-fixed font-headline font-black uppercase tracking-widest text-xs hover:scale-[1.02] transition-all disabled:opacity-50"
+          >
+             {saving ? 'Saving...' : 'Save Changes'}
           </button>
-        </div>
-
-        {/* City */}
-        <div>
-          <label className="text-xs text-gray-400 block mb-1.5">Your city</label>
-          <input
-            value={city}
-            onChange={e => setCity(e.target.value)}
-            placeholder="e.g. Chennai, Mumbai..."
-            className="w-full bg-navy-800 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-electric"
-          />
-        </div>
-
-        {/* Skills I teach */}
-        <div>
-          <label className="text-xs text-gray-400 block mb-1.5">
-            Skills I can teach <span className="text-gray-600">(max 5)</span>
-          </label>
-          <SkillTagInput skills={teachSkills} onChange={setTeachSkills} color="green" />
-        </div>
-
-        {/* Skills I want */}
-        <div>
-          <label className="text-xs text-gray-400 block mb-1.5">
-            Skills I want to learn <span className="text-gray-600">(max 5)</span>
-          </label>
-          <SkillTagInput skills={learnSkills} onChange={setLearnSkills} color="blue" />
-        </div>
-
-        {/* Save */}
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="w-full btn-primary py-3 text-sm font-medium flex items-center justify-center gap-2 cursor-pointer border-none"
-        >
-          {saving ? (
-            <>
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <><HiCheck size={16} /> Save changes</>
-          )}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Toast notification ───────────────────────────────────────
-function Toast({ message, show }) {
-  if (!show) return null;
-  return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-neon-green/20 border border-neon-green/30 text-neon-green text-sm font-medium px-5 py-3 rounded-full backdrop-blur-sm">
-      {message}
+       </motion.div>
     </div>
   );
 }
@@ -174,236 +82,427 @@ function Toast({ message, show }) {
 export default function ProfilePage() {
   const { profile, updateProfile } = useAuth();
   const [showEdit, setShowEdit] = useState(false);
-  const [toast, setToast] = useState({ show: false, message: '' });
+  const [activeTab, setActiveTab] = useState('Badges');
+  const [swaps, setSwaps] = useState([]);
+  const [swapsCount, setSwapsCount] = useState(0);
+  const [loadingSwaps, setLoadingSwaps] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [showToast, setShowToast] = useState(false);
 
-  const xpInfo = getLevelInfo(profile?.xp || 0);
-  const xpProgress = Math.min(((xpInfo.current / xpInfo.next) * 100).toFixed(0), 100);
+  // Calculate Level
+  const getLevel = (xp) => {
+    if (xp >= 3000) return 'Master';
+    if (xp >= 1500) return 'Expert';
+    if (xp >= 500) return 'Intermediate';
+    return 'Beginner';
+  };
 
-  const showToast = (message) => {
-    setToast({ show: true, message });
-    setTimeout(() => setToast({ show: false, message: '' }), 3000);
+  const userLevel = getLevel(profile?.xp || 0);
+
+  useEffect(() => {
+    if (!profile?.uid) return;
+
+    const fetchSwaps = async () => {
+      try {
+        const q = query(
+          collection(db, 'swapRequests'),
+          where('status', '==', 'accepted')
+        );
+        const snapshot = await getDocs(q);
+        
+        // Filter manually for either fromUid or toUid
+        const userSwaps = snapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(s => s.fromUid === profile.uid || s.toUid === profile.uid)
+          .sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
+
+        setSwaps(userSwaps);
+        setSwapsCount(userSwaps.length);
+      } catch (err) {
+        console.error('Error fetching swaps:', err);
+      } finally {
+        setLoadingSwaps(false);
+      }
+    };
+
+    fetchSwaps();
+  }, [profile?.uid]);
+
+  const handleShare = () => {
+    navigator.clipboard.writeText(window.location.href);
+    alert('Profile link copied to clipboard!');
+  };
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Check file size (5MB limit)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Upload failed. Make sure image is under 5MB');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      // Use FileReader to convert image to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(file);
+      const base64string = await base64Promise;
+
+      const apiKey = import.meta.env.VITE_IMGBB_KEY;
+      if (!apiKey || apiKey === 'your_key_here') {
+        throw new Error('imgbb API key not configured. Please add VITE_IMGBB_KEY to your .env file.');
+      }
+
+      const formData = new FormData();
+      formData.append('image', base64string);
+
+      const res = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error?.message || 'Upload to imgbb failed');
+      
+      const downloadURL = data.data.url;
+      
+      // Update Firestore via AuthContext
+      if (updateProfile) {
+        await updateProfile({ photoURL: downloadURL });
+      }
+
+      // Update Firebase Auth profile
+      if (auth.currentUser) {
+        await updateAuthProfile(auth.currentUser, { photoURL: downloadURL });
+      }
+
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } catch (err) {
+      console.error('Upload failed error:', err);
+      alert(err.message || 'Upload failed. Make sure image is under 5MB');
+    } finally {
+      setUploading(false);
+      // Ensure input is cleared so same file can be selected again
+      e.target.value = '';
+    }
   };
 
   const handleSave = async (updates) => {
-    await updateProfile(updates);
-    showToast('✅ Profile saved successfully!');
-  };
-
-  const handleShare = () => {
-    const link = `${window.location.origin}/profile/${profile?.uid}`;
-    navigator.clipboard.writeText(link).then(() => {
-      showToast('🔗 Profile link copied to clipboard!');
-    }).catch(() => {
-      // Fallback for browsers that block clipboard
-      showToast(`🔗 Your link: /profile/${profile?.uid}`);
-    });
+    if (updateProfile) await updateProfile(updates);
   };
 
   return (
-    <div className="space-y-6 fade-in">
+    <PageTransition className="space-y-12 pb-24 relative overflow-hidden">
+      {/* Background Graphic */}
+      <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-primary/5 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
 
-      {/* Edit Modal */}
-      {showEdit && (
-        <EditModal
-          profile={profile}
-          onSave={handleSave}
-          onClose={() => setShowEdit(false)}
-        />
-      )}
+      <AnimatePresence>
+        {showEdit && <EditModal profile={profile} onClose={() => setShowEdit(false)} onSave={handleSave} />}
+        {showToast && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] bg-primary text-on-primary-fixed px-6 py-3 rounded-full font-headline font-black uppercase tracking-widest text-xs shadow-2xl"
+          >
+            Profile photo updated! 📸
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Toast */}
-      <Toast show={toast.show} message={toast.message} />
+      {/* Header / Profile Header */}
+      <section className="relative flex flex-col lg:flex-row items-center lg:items-end gap-12 pt-12">
+         <div className="relative shrink-0">
+            <div className="w-64 h-64 rounded-xl border-2 border-primary/20 p-2 relative group cursor-pointer">
+               <input 
+                 type="file" 
+                 id="avatar-upload" 
+                 className="hidden" 
+                 accept="image/*"
+                 onChange={handlePhotoUpload}
+                 disabled={uploading}
+               />
+               <label htmlFor="avatar-upload" className="block w-full h-full cursor-pointer relative overflow-hidden rounded-lg">
+                  <div className="absolute inset-0 border border-primary/10 -m-4 rounded-xl pointer-events-none animate-pulse"></div>
+                  <div className="w-full h-full bg-surface-container-highest relative">
+                     <img 
+                       src={profile?.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.displayName || 'U')}&background=random&size=512`} 
+                       className={`w-full h-full object-cover transition-all duration-700 ${uploading ? 'opacity-50 blur-sm' : 'grayscale brightness-75 group-hover:grayscale-0 group-hover:brightness-100'}`} 
+                       alt="OPERATOR"
+                     />
+                     <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-60"></div>
+                     
+                     {/* Hover Overlay */}
+                     {!uploading && (
+                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-background/20 backdrop-blur-[2px]">
+                          <div className="w-16 h-16 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center">
+                             <span className="material-symbols-outlined text-3xl text-primary animate-pulse">photo_camera</span>
+                          </div>
+                       </div>
+                     )}
 
-      {/* Profile Header */}
-      <div className="glass-card p-6 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-electric/5 to-neon-purple/5" />
-        <div className="relative z-10 flex flex-col sm:flex-row items-center sm:items-start gap-6">
-
-          {/* Avatar */}
-          <div className="relative">
-            {profile?.photoURL ? (
-              <img src={profile.photoURL} alt="avatar"
-                className="w-24 h-24 rounded-3xl ring-4 ring-electric/20 object-cover" />
-            ) : (
-              <div className="w-24 h-24 rounded-3xl flex items-center justify-center text-white text-4xl font-bold ring-4 ring-electric/20"
-                style={{ background: getAvatarColor(profile?.displayName || 'U') }}>
-                {profile?.displayName?.charAt(0) || 'U'}
-              </div>
-            )}
-            <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-neon-green flex items-center justify-center text-white text-sm">✓</div>
-          </div>
-
-          {/* Info */}
-          <div className="flex-1 text-center sm:text-left">
-            <div className="flex items-center gap-3 justify-center sm:justify-start">
-              <h1 className="text-2xl font-bold text-white">{profile?.displayName || 'User'}</h1>
-              <span className="text-xs font-medium px-3 py-1 rounded-full bg-electric/20 text-electric border border-electric/30">
-                {profile?.level || 'Beginner'}
-              </span>
-            </div>
-            <p className="text-gray-400 text-sm mt-1">{profile?.email}</p>
-            {profile?.city
-              ? <p className="text-gray-500 text-xs mt-1">📍 {profile.city}</p>
-              : <button onClick={() => setShowEdit(true)}
-                className="text-xs text-electric mt-1 bg-transparent border-none cursor-pointer hover:underline">
-                + Add your city
-              </button>
-            }
-
-            <div className="flex items-center gap-6 mt-4 justify-center sm:justify-start">
-              <div className="text-center">
-                <p className="text-xl font-bold text-white">🔥 {profile?.streak || 0}</p>
-                <p className="text-xs text-gray-500">Streak</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xl font-bold text-white">🪙 {profile?.coins || 0}</p>
-                <p className="text-xs text-gray-500">Coins</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xl font-bold text-white">⚡ {profile?.xp || 0}</p>
-                <p className="text-xs text-gray-500">XP</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xl font-bold text-white">🏆 {profile?.badges?.length || 0}</p>
-                <p className="text-xs text-gray-500">Badges</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Action buttons */}
-          <div className="flex gap-2 shrink-0">
-            <button
-              onClick={() => setShowEdit(true)}
-              className="btn-secondary py-2 px-4 text-sm flex items-center gap-1.5 cursor-pointer">
-              <HiPencil size={14} /> Edit
-            </button>
-            <button
-              onClick={handleShare}
-              className="btn-secondary py-2 px-4 text-sm flex items-center gap-1.5 cursor-pointer">
-              <HiShare size={14} /> Share
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* XP Progress */}
-      <div className="glass-card p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="text-sm font-semibold text-white">Level Progress</h3>
-            <p className="text-xs text-gray-400">{profile?.level || 'Beginner'} → {xpInfo.label}</p>
-          </div>
-          <span className="text-sm font-bold text-electric">{xpProgress}%</span>
-        </div>
-        <div className="w-full h-3 bg-navy-800 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-electric to-neon-purple rounded-full transition-all duration-1000"
-            style={{ width: `${xpProgress}%` }} />
-        </div>
-        <p className="text-xs text-gray-500 mt-2">{xpInfo.current} / {xpInfo.next} XP to {xpInfo.label}</p>
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Skills */}
-        <div className="glass-card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-white">Skills</h3>
-            <button onClick={() => setShowEdit(true)}
-              className="text-xs text-electric bg-transparent border-none cursor-pointer hover:underline">
-              Edit skills
-            </button>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <p className="text-xs text-gray-500 mb-2">Teaching</p>
-              <div className="flex flex-wrap gap-2">
-                {(profile?.teachSkills || []).length > 0
-                  ? profile.teachSkills.map(s => <span key={s} className="tag-green">{s}</span>)
-                  : <button onClick={() => setShowEdit(true)}
-                    className="text-xs text-gray-600 bg-transparent border-none cursor-pointer hover:text-electric">
-                    + Add skills you teach
-                  </button>}
-              </div>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 mb-2">Learning</p>
-              <div className="flex flex-wrap gap-2">
-                {(profile?.learnSkills || []).length > 0
-                  ? profile.learnSkills.map(s => <span key={s} className="tag-blue">{s}</span>)
-                  : <button onClick={() => setShowEdit(true)}
-                    className="text-xs text-gray-600 bg-transparent border-none cursor-pointer hover:text-electric">
-                    + Add skills you want to learn
-                  </button>}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Badges */}
-        <div className="glass-card p-5">
-          <h3 className="text-sm font-semibold text-white mb-4">Badges Earned</h3>
-          {(profile?.badges || []).length === 0
-            ? <p className="text-sm text-gray-500">No badges yet. Start swapping!</p>
-            : (
-              <div className="grid grid-cols-3 gap-3">
-                {profile.badges.map((badge, i) => (
-                  <div key={i} className="bg-white/5 rounded-xl p-3 text-center">
-                    <span className="text-2xl block mb-1">{badge.icon || '🏅'}</span>
-                    <p className="text-xs font-semibold text-white">{badge.name || badge}</p>
+                     {/* Uploading Spinner */}
+                     {uploading && (
+                       <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                       </div>
+                     )}
                   </div>
-                ))}
-              </div>
-            )}
-        </div>
-      </div>
-
-      {/* Swap History */}
-      <div className="glass-card p-5">
-        <h3 className="text-sm font-semibold text-white mb-4">Swap History</h3>
-        {(profile?.swapHistory || []).length === 0
-          ? <p className="text-sm text-gray-500">No swaps yet. Go explore and request your first swap!</p>
-          : (
-            <div className="space-y-3">
-              {profile.swapHistory.map((swap, i) => (
-                <div key={i} className="flex items-center gap-4 p-3 rounded-xl bg-white/[0.02]">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
-                    style={{ background: getAvatarColor(swap.partner) }}>
-                    {swap.partner?.charAt(0)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white">{swap.partner}</p>
-                    <p className="text-xs text-gray-500">
-                      <span className="tag-green text-[10px] mr-1">{swap.gave}</span>→
-                      <span className="tag-blue text-[10px] ml-1">{swap.got}</span>
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm text-neon-green font-medium">+{swap.xp} XP</p>
-                    <p className="text-[10px] text-gray-600">{swap.date}</p>
-                  </div>
-                </div>
-              ))}
+               </label>
+               <div className="absolute -bottom-4 -left-4 bg-primary text-on-primary-fixed px-4 py-2 font-headline font-black uppercase italic tracking-tighter skew-x-[-15deg] shadow-[0_10px_20px_rgba(133,173,255,0.3)]">ID: {profile?.uid?.slice(0, 8) || 'OP_01'}</div>
             </div>
-          )}
-      </div>
+         </div>
 
-      {/* Portfolio */}
-      <div className="glass-card p-5">
-        <h3 className="text-sm font-semibold text-white mb-4">Mini Project Portfolio</h3>
-        {(profile?.portfolio || []).length === 0
-          ? <p className="text-sm text-gray-500">No projects yet. Complete a Practice Zone mini project!</p>
-          : (
-            <div className="grid sm:grid-cols-3 gap-3">
-              {profile.portfolio.map((p, i) => (
-                <div key={i} className="bg-white/5 rounded-xl p-4">
-                  <div className="w-full h-24 rounded-lg bg-navy-800 flex items-center justify-center text-3xl mb-3">📸</div>
-                  <h4 className="text-sm font-semibold text-white">{p.title}</h4>
-                  <p className="text-xs text-gray-500 mt-1">{p.skill} • {p.date}</p>
-                  <p className="text-xs text-neon-green mt-1">+{p.xp} XP</p>
-                </div>
-              ))}
+         <div className="flex-1 space-y-8 text-center lg:text-left">
+            <div className="space-y-2">
+               <div className="flex items-center justify-center lg:justify-start gap-3">
+                  <h1 className="text-5xl md:text-7xl font-headline font-black tracking-tighter uppercase italic">{profile?.displayName || 'USER'}</h1>
+               </div>
+               <p className="font-mono text-xs text-primary tracking-[0.4em] uppercase">{profile?.city || 'Your City'}</p>
             </div>
-          )}
+
+            <div className="flex flex-wrap justify-center lg:justify-start gap-8">
+               <div className="space-y-1">
+                  <span className="font-mono text-[9px] text-slate-500 uppercase tracking-widest">Accuracy</span>
+                  <div className="flex items-baseline gap-2">
+                     <span className="font-headline font-black text-3xl">{profile?.streak || 0}</span>
+                     <span className="text-primary font-headline font-bold text-xs uppercase">Day Streak</span>
+                  </div>
+               </div>
+               <div className="w-px h-12 bg-white/5 hidden sm:block"></div>
+               <div className="space-y-1">
+                  <span className="font-mono text-[9px] text-slate-500 uppercase tracking-widest">Swaps Done</span>
+                  <div className="flex items-baseline gap-2">
+                     <span className="font-headline font-black text-3xl">{swapsCount}</span>
+                     <span className="text-secondary font-headline font-bold text-xs uppercase">Completed</span>
+                  </div>
+               </div>
+               <div className="w-px h-12 bg-white/5 hidden sm:block"></div>
+               <div className="space-y-1">
+                  <span className="font-mono text-[9px] text-slate-500 uppercase tracking-widest">Rating</span>
+                  <div className="flex items-baseline gap-2">
+                     <span className="font-headline font-black text-3xl uppercase">{userLevel}</span>
+                  </div>
+               </div>
+            </div>
+
+            <div className="flex justify-center lg:justify-start gap-4">
+               <button onClick={handleShare} className="px-8 py-3 bg-white/5 border border-white/10 font-headline font-black uppercase tracking-widest text-[10px] hover:bg-white/10 transition-all flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm">content_copy</span>
+                  Share Profile
+               </button>
+               <button onClick={() => setShowEdit(true)} className="px-8 py-3 bg-surface-container-highest border border-white/5 font-headline font-black uppercase tracking-widest text-[10px] flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm">edit</span>
+                  Edit Profile
+               </button>
+            </div>
+         </div>
+      </section>
+
+      {/* Profile Sections Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+         {/* Side Stats */}
+         <aside className="space-y-8 lg:col-span-1">
+            <div className="glass-panel p-8 rounded-xl border border-white/5 space-y-8">
+               <h4 className="font-headline font-black text-xs uppercase tracking-widest text-slate-500 italic flex items-center gap-2">
+                  <span className="material-symbols-outlined text-xs">settings_input_component</span>
+                  Knowledge Matrix
+               </h4>
+               
+               <div className="space-y-6">
+                  <div className="space-y-2">
+                     <div className="flex justify-between font-mono text-[9px] uppercase tracking-widest">
+                        <span>Teaching</span>
+                        <span className="text-primary">{Math.min((profile?.teachSkills?.length || 0) * 20, 100)}%</span>
+                     </div>
+                     <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-primary" style={{ width: `${Math.min((profile?.teachSkills?.length || 0) * 20, 100)}%` }}></div>
+                     </div>
+                  </div>
+                  <div className="space-y-2">
+                     <div className="flex justify-between font-mono text-[9px] uppercase tracking-widest">
+                        <span>Learning</span>
+                        <span className="text-secondary">{Math.min((profile?.learnSkills?.length || 0) * 20, 100)}%</span>
+                     </div>
+                     <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-secondary" style={{ width: `${Math.min((profile?.learnSkills?.length || 0) * 20, 100)}%` }}></div>
+                     </div>
+                  </div>
+                  <div className="space-y-2">
+                     <div className="flex justify-between font-mono text-[9px] uppercase tracking-widest">
+                        <span>Activity</span>
+                        <span className="text-tertiary">{Math.min(((profile?.streak || 0) / 30) * 100, 100)}%</span>
+                     </div>
+                     <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-tertiary" style={{ width: `${Math.min(((profile?.streak || 0) / 30) * 100, 100)}%` }}></div>
+                     </div>
+                  </div>
+               </div>
+
+               <div className="pt-8 grid grid-cols-2 gap-4 border-t border-white/5">
+                  <div className="text-center">
+                     <p className="text-2xl font-headline font-black italic">{profile?.coins || 0}</p>
+                     <p className="font-mono text-[8px] text-slate-500 uppercase tracking-widest">SkillCoins</p>
+                  </div>
+                  <div className="text-center">
+                     <p className="text-2xl font-headline font-black italic">{profile?.xp || 0}</p>
+                     <p className="font-mono text-[8px] text-slate-500 uppercase tracking-widest">Total XP</p>
+                  </div>
+               </div>
+            </div>
+         </aside>
+
+         {/* Content Tabs */}
+         <main className="lg:col-span-2 space-y-8 overflow-hidden">
+            <div className="flex gap-4 border-b border-white/5 pb-4 overflow-x-auto custom-scrollbar">
+               {['Badges', 'My Skills', 'Swap History'].map(tab => (
+                 <button 
+                  key={tab} 
+                  onClick={() => setActiveTab(tab)}
+                  className={`font-headline font-black text-xs uppercase tracking-[0.2em] px-4 py-2 transition-all relative ${activeTab === tab ? 'text-primary' : 'text-slate-500 hover:text-white'}`}
+                 >
+                   {tab}
+                   {activeTab === tab && <motion.div layoutId="tab-underline" className="absolute bottom-[-17px] left-0 right-0 h-1 bg-primary shadow-[0_0_10px_rgba(133,173,255,1)]" />}
+                 </button>
+               ))}
+            </div>
+
+            <AnimatePresence mode="wait">
+              {activeTab === 'Badges' && (
+                <motion.div 
+                  key="ach"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-8"
+                >
+                  {(profile?.badges && profile.badges.length > 0) ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                      {profile.badges.map((b, i) => (
+                        <div key={i} className="glass-panel p-6 rounded-xl border border-white/5 flex flex-col items-center gap-4 group hover:border-primary/40 transition-all">
+                           <div className="w-20 h-20 rounded-full border-4 border-white/5 p-1 relative">
+                              <div className="absolute inset-0 border-2 border-dashed border-primary/20 rounded-full animate-[spin_10s_linear_infinite]"></div>
+                              <div className="w-full h-full bg-surface-container rounded-full flex items-center justify-center text-3xl shadow-inner group-hover:scale-110 transition-transform">
+                                 {b.icon || '🏅'}
+                              </div>
+                           </div>
+                           <p className="font-headline font-black text-[10px] uppercase text-center tracking-widest">{b.name || b}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="glass-panel p-12 rounded-xl border border-dashed border-white/10 text-center space-y-4">
+                       <span className="material-symbols-outlined text-5xl text-slate-600">military_tech</span>
+                       <p className="text-slate-400 font-headline uppercase tracking-widest text-sm">Complete your first swap to earn badges! 🏅</p>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {activeTab === 'My Skills' && (
+                <motion.div 
+                  key="skills"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-8"
+                >
+                  {(profile?.teachSkills?.length || profile?.learnSkills?.length) ? (
+                    <div className="grid md:grid-cols-2 gap-8">
+                       <div className="space-y-4">
+                          <h5 className="font-mono text-[10px] uppercase tracking-widest text-primary">I can teach</h5>
+                          <div className="flex flex-wrap gap-2">
+                             {(profile?.teachSkills || []).map(s => (
+                               <div key={s} className="px-4 py-2 bg-primary/10 border border-primary/30 text-primary-fixed rounded-lg font-headline font-bold text-xs uppercase">
+                                  {s}
+                               </div>
+                             ))}
+                          </div>
+                       </div>
+                       <div className="space-y-4">
+                          <h5 className="font-mono text-[10px] uppercase tracking-widest text-secondary">I want to learn</h5>
+                          <div className="flex flex-wrap gap-2">
+                             {(profile?.learnSkills || []).map(s => (
+                               <div key={s} className="px-4 py-2 bg-secondary/10 border border-secondary/30 text-secondary-fixed rounded-lg font-headline font-bold text-xs uppercase">
+                                  {s}
+                               </div>
+                             ))}
+                          </div>
+                       </div>
+                    </div>
+                  ) : (
+                    <div className="glass-panel p-12 rounded-xl border border-dashed border-white/10 text-center space-y-4">
+                       <p className="text-slate-400 font-headline uppercase tracking-widest text-sm">No skills added yet — click Edit Profile to add!</p>
+                       <button onClick={() => setShowEdit(true)} className="px-6 py-2 bg-white/5 border border-white/10 font-headline text-[10px] uppercase tracking-widest hover:bg-white/10 transition-all">Edit Skills</button>
+                    </div>
+                  )}
+                  { (profile?.teachSkills?.length || profile?.learnSkills?.length) && (
+                    <button onClick={() => setShowEdit(true)} className="w-full py-4 glass-panel border border-dashed border-white/10 text-slate-500 font-mono text-[10px] uppercase tracking-widest hover:text-white transition-all">Edit Skills</button>
+                  )}
+                </motion.div>
+              )}
+
+              {activeTab === 'Swap History' && (
+                <motion.div 
+                  key="sync"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-4"
+                >
+                  {loadingSwaps ? (
+                    <div className="py-12 flex justify-center">
+                       <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  ) : swaps.length > 0 ? (
+                    swaps.map((swap, i) => {
+                      const isSender = swap.fromUid === profile.uid;
+                      const partnerName = isSender ? swap.toName : swap.fromName;
+                      const mySkill = isSender ? swap.offeredSkill : swap.wantedSkill;
+                      const theirSkill = isSender ? swap.wantedSkill : swap.offeredSkill;
+                      
+                      return (
+                        <div key={swap.id} className="glass-panel p-6 rounded-xl flex items-center gap-6 border border-white/5 hover:border-white/10 transition-all group">
+                           <div className="w-12 h-12 rounded-lg bg-surface-container-high border border-white/10 flex items-center justify-center font-black text-primary uppercase">
+                              {partnerName?.charAt(0)}
+                           </div>
+                           <div className="flex-1 min-w-0">
+                              <p className="font-headline font-black uppercase text-sm">{partnerName}</p>
+                              <div className="flex items-center gap-2 mt-1">
+                                 <span className="font-mono text-[8px] uppercase tracking-widest text-primary">{mySkill}</span>
+                                 <span className="material-symbols-outlined text-[10px] text-slate-700">arrow_forward</span>
+                                 <span className="font-mono text-[8px] uppercase tracking-widest text-secondary">{theirSkill}</span>
+                              </div>
+                           </div>
+                           <div className="text-right">
+                              <p className="font-headline font-black text-lg text-primary">+50 XP</p>
+                              <p className="font-mono text-[8px] text-slate-700 uppercase">
+                                {swap.updatedAt?.toDate ? swap.updatedAt.toDate().toLocaleDateString() : 'Recent'}
+                              </p>
+                           </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="glass-panel p-12 rounded-xl border border-dashed border-white/10 text-center">
+                       <p className="text-slate-400 font-headline uppercase tracking-widest text-sm">No completed swaps yet. Go explore and request your first swap!</p>
+                    </div>
+                  )}
+                  {swaps.length > 0 && (
+                    <button className="w-full py-4 glass-panel border border-dashed border-white/10 text-slate-500 font-mono text-[10px] uppercase tracking-widest hover:text-white transition-all">Request History Export</button>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+         </main>
       </div>
-    </div>
+    </PageTransition>
   );
 }

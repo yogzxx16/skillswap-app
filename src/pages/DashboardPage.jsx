@@ -1,23 +1,57 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { HiTrendingUp, HiGift, HiCheckCircle } from 'react-icons/hi';
 import { motion, AnimatePresence } from 'framer-motion';
 import CountUpNumber from '../components/CountUpNumber';
 import PageTransition from '../components/PageTransition';
 
 export default function DashboardPage() {
-  const { profile, updateProfile } = useAuth();
+  const { profile } = useAuth();
+  const navigate = useNavigate();
   const [feed, setFeed] = useState([]);
-  const [showChallenge, setShowChallenge] = useState(
-    () => localStorage.getItem('skillswap_challenge_dismissed') !== 'true'
-  );
-  const [challengeAccepted, setChallengeAccepted] = useState(
-    () => localStorage.getItem('skillswap_challenge_accepted') === 'true'
-  );
+
+  // Daily Challenge State
+  const [challengeState, setChallengeState] = useState(() => {
+    const saved = localStorage.getItem('skillswap_daily_challenge');
+    if (saved) {
+      const { state, date } = JSON.parse(saved);
+      if (date === new Date().toDateString()) return state;
+    }
+    return 'idle'; // idle, accepted, dismissed
+  });
+
   const [timeLeft, setTimeLeft] = useState('');
 
+  useEffect(() => {
+    if (challengeState !== 'accepted') return;
+
+    const timer = setInterval(() => {
+      const now = new Date();
+      const midnight = new Date();
+      midnight.setHours(24, 0, 0, 0);
+      const diff = midnight - now;
+
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      setTimeLeft(`${hours}h ${minutes}m ${seconds}s`);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [challengeState]);
+
+  const handleChallengeAction = (action) => {
+    setChallengeState(action);
+    localStorage.setItem('skillswap_daily_challenge', JSON.stringify({
+      state: action,
+      date: new Date().toDateString()
+    }));
+  };
+
+  // XP Progress Calculation
   const LEVEL_THRESHOLDS = [
     { label: 'Beginner', min: 0, max: 500 },
     { label: 'Intermediate', min: 500, max: 1500 },
@@ -29,11 +63,16 @@ export default function DashboardPage() {
     const current = LEVEL_THRESHOLDS.find(l => xp >= l.min && xp < l.max) || LEVEL_THRESHOLDS[3];
     const nextIdx = LEVEL_THRESHOLDS.indexOf(current) + 1;
     const next = LEVEL_THRESHOLDS[nextIdx] || current;
-    return { label: next.label, current: xp - current.min, next: current.max - current.min };
+    return { 
+      label: current.label, 
+      nextLabel: next.label,
+      currentXpInLevel: xp - current.min, 
+      xpNeededForNext: current.max - current.min 
+    };
   }
 
   const xpInfo = getLevelInfo(profile?.xp || 0);
-  const xpProgress = Math.min(((xpInfo.current / xpInfo.next) * 100).toFixed(0), 100);
+  const xpProgress = Math.min(((xpInfo.currentXpInLevel / xpInfo.xpNeededForNext) * 100), 100);
 
   // Real-time activity feed from Firestore
   useEffect(() => {
@@ -49,229 +88,270 @@ export default function DashboardPage() {
     return () => unsub();
   }, []);
 
-  // Countdown timer
-  useEffect(() => {
-    if (!challengeAccepted) return;
-    const updateTime = () => {
-      const now = new Date();
-      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-      const diff = tomorrow - now;
-      const h = Math.floor(diff / (1000 * 60 * 60));
-      const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const s = Math.floor((diff % (1000 * 60)) / 1000);
-      setTimeLeft(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
-    };
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, [challengeAccepted]);
-
-  const handleDismiss = () => {
-    setShowChallenge(false);
-    localStorage.setItem('skillswap_challenge_dismissed', 'true');
-  };
-
-  const handleAccept = () => {
-    setChallengeAccepted(true);
-    localStorage.setItem('skillswap_challenge_accepted', 'true');
-    if (updateProfile) updateProfile({ coins: (profile?.coins || 0) + 50 });
-  };
-
-  const firstName = profile?.displayName?.split(' ')[0] || 'there';
+  const firstName = profile?.displayName?.split(' ')[0] || 'OPERATOR';
 
   return (
-    <PageTransition className="space-y-6 pb-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        {profile?.photoURL ? (
-          <img src={profile.photoURL} alt="Profile"
-            className="w-16 h-16 rounded-full object-cover border-2 border-electric shrink-0" />
-        ) : (
-          <div className="w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl font-bold border-2 border-electric bg-navy-800 shrink-0">
-            {profile?.displayName?.charAt(0) || 'U'}
-          </div>
-        )}
+    <PageTransition className="space-y-10">
+      {/* Greeting Area */}
+      <section className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-bold text-white">
-            Welcome back, {firstName}! 👋
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-2 h-2 bg-secondary rounded-full animate-ping"></span>
+            <span className="font-mono text-[10px] tracking-[0.3em] text-secondary uppercase">Welcome back, {firstName}!</span>
+          </div>
+          <h1 className="font-headline font-black text-4xl md:text-6xl tracking-tighter uppercase italic">
+            Good to see you, <span className="text-gradient">{firstName}</span>.
           </h1>
-          <p className="text-gray-400 mt-1">Here's your skill journey overview</p>
+          <p className="font-label text-slate-500 uppercase tracking-widest text-[10px] mt-2">Your learning journey</p>
         </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <motion.div animate={{ scale: [1, 1.05, 1] }} transition={{ repeat: Infinity, duration: 3 }}
-          className="glass-card p-5 hover:border-neon-orange/30 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-2xl">🔥</span>
-            <span className="text-xs text-neon-orange bg-neon-orange/10 px-2 py-1 rounded-full">Daily</span>
+        <div className="flex gap-4">
+          <div className="glass-panel p-4 rounded-lg flex flex-col items-end border-l-4 border-primary min-w-[150px]">
+            <span className="font-mono text-[10px] text-slate-500 uppercase">Your Location</span>
+            <span className="font-headline font-black text-xl">{profile?.city || 'Global'}</span>
           </div>
-          <p className="text-3xl font-bold text-white"><CountUpNumber value={profile?.streak || 0} /></p>
-          <p className="text-sm text-gray-400 mt-1">Day Streak</p>
-        </motion.div>
-
-        <div className="glass-card p-5 hover:border-neon-green/30 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-2xl">🪙</span>
-            <span className="text-xs text-neon-green bg-neon-green/10 px-2 py-1 rounded-full">+50</span>
+          <div className="glass-panel p-4 rounded-lg flex flex-col items-end border-l-4 border-secondary min-w-[120px]">
+            <span className="font-mono text-[10px] text-slate-500 uppercase">Level Badge</span>
+            <span className="font-headline font-black text-xl text-secondary">{xpInfo.label}</span>
           </div>
-          <p className="text-3xl font-bold text-white"><CountUpNumber value={profile?.coins || 0} /></p>
-          <p className="text-sm text-gray-400 mt-1">SkillCoins</p>
         </div>
+      </section>
 
-        <div className="glass-card p-5 hover:border-electric/30 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-2xl">⚡</span>
-            <HiTrendingUp className="text-electric" size={18} />
-          </div>
-          <p className="text-3xl font-bold text-white"><CountUpNumber value={profile?.xp || 0} /></p>
-          <p className="text-sm text-gray-400 mt-1">Total XP</p>
-        </div>
-
-        <div className="glass-card p-5 hover:border-neon-purple/30 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-2xl">🏆</span>
-            <span className="text-xs text-neon-purple bg-neon-purple/10 px-2 py-1 rounded-full">
-              {profile?.level || 'Beginner'}
-            </span>
-          </div>
-          <p className="text-3xl font-bold text-white"><CountUpNumber value={profile?.badges?.length || 0} /></p>
-          <p className="text-sm text-gray-400 mt-1">Badges</p>
-        </div>
-      </div>
-
-      {/* XP Progress */}
-      <div className="glass-card p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="text-sm font-semibold text-white">Level Progress</h3>
-            <p className="text-xs text-gray-400">{profile?.level || 'Beginner'} → {xpInfo.label}</p>
-          </div>
-          <span className="text-sm font-bold text-electric">{xpProgress}%</span>
-        </div>
-        <div className="w-full h-3 bg-navy-800 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-electric to-neon-purple rounded-full transition-all duration-1000"
-            style={{ width: `${xpProgress}%` }} />
-        </div>
-        <p className="text-xs text-gray-500 mt-2">{xpInfo.current} / {xpInfo.next} XP to {xpInfo.label}</p>
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-6 items-start">
-        {/* Daily Challenge */}
-        <AnimatePresence>
-          {showChallenge && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className={`glass-card p-6 flex flex-col ${challengeAccepted ? 'border-neon-green/30' : 'border-neon-orange/20'}`}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Main Bento Column */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Stats Bento Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <motion.div 
+              whileHover={{ y: -5 }}
+              className="relative group h-64 rounded-xl overflow-hidden border border-white/10 bg-surface-container-low p-8 transition-all duration-300"
             >
-              <div className="flex items-center gap-2 mb-3">
-                {challengeAccepted
-                  ? <HiCheckCircle className="text-neon-green" size={24} />
-                  : <HiGift className="text-neon-orange" size={24} />}
-                <h3 className={`text-sm font-semibold ${challengeAccepted ? 'text-neon-green' : 'text-neon-orange'}`}>
-                  Daily Challenge
-                </h3>
-                {!challengeAccepted && (
-                  <span className="text-xs bg-neon-orange/20 text-neon-orange px-2 py-0.5 rounded-full ml-auto">2x Coins</span>
-                )}
+              <div className="absolute top-0 right-0 p-4 material-symbols-outlined text-primary/20 text-8xl group-hover:text-primary/40 transition-colors">monitoring</div>
+              <div className="relative z-10 space-y-4">
+                <span className="text-[10px] font-mono tracking-widest text-primary uppercase">Your performance</span>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-5xl font-headline font-black"><CountUpNumber value={profile?.accuracy || 94} /></span>
+                  <span className="text-xl font-headline font-bold text-primary">%</span>
+                </div>
+                <p className="text-sm text-slate-500 leading-relaxed max-w-[200px]">Overall accuracy across all skill swaps this season.</p>
               </div>
-
-              {challengeAccepted ? (
-                <div className="flex flex-col gap-3">
-                  <p className="text-white font-medium text-lg">Challenge Accepted! 🎉</p>
-                  <p className="text-sm text-gray-300">Complete a swap today for 2x coins 🔥</p>
-                  <p className="text-sm text-neon-green font-medium">+50 bonus coins added!</p>
-                  <div className="p-4 bg-navy-900/50 rounded-xl border border-white/5 text-center">
-                    <p className="text-xs text-gray-500 mb-1">Time Remaining</p>
-                    <p className="text-2xl font-mono font-bold text-white tracking-wider">{timeLeft}</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  <p className="text-white font-medium text-lg">Complete one swap today!</p>
-                  <p className="text-sm text-gray-400">Finish a skill exchange to earn double SkillCoins today.</p>
-                  <div className="flex gap-3 mt-2">
-                    <motion.button whileTap={{ scale: 0.98 }} onClick={handleAccept}
-                      className="btn-primary text-sm py-3 px-5 flex-1 border-none cursor-pointer">
-                      Accept Challenge
-                    </motion.button>
-                    <motion.button whileTap={{ scale: 0.98 }} onClick={handleDismiss}
-                      className="text-sm text-gray-400 bg-navy-800/50 border border-white/5 cursor-pointer py-3 px-5 rounded-xl">
-                      Dismiss
-                    </motion.button>
-                  </div>
-                </div>
-              )}
             </motion.div>
-          )}
-        </AnimatePresence>
 
-        {/* Live Activity Feed — REAL from Firestore */}
-        <div className={`glass-card p-6 flex flex-col ${!showChallenge ? 'lg:col-span-2' : ''}`}>
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-2 h-2 bg-neon-green rounded-full animate-pulse" />
-            <h3 className="text-sm font-semibold text-white">Live Activity</h3>
+            <motion.div 
+              whileHover={{ y: -5 }}
+              className="relative group h-64 rounded-xl overflow-hidden border-2 border-secondary/40 shadow-[0_0_30px_rgba(255,163,133,0.15)] bg-surface-container p-8 transition-all duration-300"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-secondary/10 to-transparent"></div>
+              <div className="relative z-10 flex flex-col h-full">
+                <div className="flex justify-between">
+                  <span className="text-[10px] font-mono tracking-widest text-secondary uppercase">Daily Streak</span>
+                  <span className="material-symbols-outlined text-secondary animate-bounce">local_fire_department</span>
+                </div>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="text-6xl font-headline font-black"><CountUpNumber value={profile?.streak || 0} /></span>
+                  <span className="text-sm font-mono text-secondary">DAYS</span>
+                </div>
+                <div className="mt-auto flex gap-1">
+                  {[...Array(7)].map((_, i) => (
+                    <div key={i} className={`h-1 flex-1 rounded-full ${i < (profile?.streak % 7 || 0) ? 'bg-secondary' : 'bg-white/10'}`}></div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+
+            <div className="md:col-span-2 glass-panel p-8 rounded-xl border border-white/5 flex flex-col md:flex-row justify-between items-center gap-8">
+              <div className="space-y-2 text-center md:text-left">
+                <span className="text-[10px] font-mono tracking-widest text-slate-500 uppercase">Your Level</span>
+                <h3 className="text-3xl font-headline font-black text-gradient uppercase italic">{xpInfo.label}</h3>
+              </div>
+              <div className="flex-1 w-full max-w-md space-y-4">
+                <div className="flex justify-between font-mono text-[10px] uppercase tracking-widest">
+                  <span>Progress to {xpInfo.nextLabel}</span>
+                  <span className="text-tertiary">{xpProgress.toFixed(0)}%</span>
+                </div>
+                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${xpProgress}%` }}
+                    className="h-full bg-gradient-to-r from-primary via-secondary to-tertiary shimmer-bar"
+                  />
+                </div>
+                <p className="text-[10px] text-center text-slate-500 font-mono tracking-tighter italic">XP needed to level up: {xpInfo.xpNeededForNext - xpInfo.currentXpInLevel}</p>
+              </div>
+            </div>
           </div>
 
-          {feed.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center">
-              <p className="text-gray-500 text-sm text-center">
-                No activity yet!<br />Be the first to complete a swap 🔥
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3 flex-1">
+          {/* Your Growth Section */}
+          <div className="glass-panel p-8 rounded-xl border border-white/5 min-h-[320px] relative overflow-hidden flex flex-col">
+            <h4 className="font-headline font-bold uppercase tracking-widest text-xs mb-8 flex items-center gap-2">
+              <span className="material-symbols-outlined text-sm text-primary">analytics</span>
+              Your Growth
+            </h4>
+            
+            {(profile?.teachSkills?.length || profile?.learnSkills?.length || profile?.streak) ? (
+              <div className="space-y-6 flex-1 flex flex-col justify-center">
+                <div className="space-y-2">
+                  <div className="flex justify-between font-mono text-[9px] uppercase tracking-widest">
+                    <span>Skills you teach</span>
+                    <span className="text-primary">{Math.min((profile?.teachSkills?.length || 0) * 20, 100)}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min((profile?.teachSkills?.length || 0) * 20, 100)}%` }}
+                      className="h-full bg-primary" 
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between font-mono text-[9px] uppercase tracking-widest">
+                    <span>Skills you want to learn</span>
+                    <span className="text-secondary">{Math.min((profile?.learnSkills?.length || 0) * 20, 100)}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min((profile?.learnSkills?.length || 0) * 20, 100)}%` }}
+                      className="h-full bg-secondary" 
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between font-mono text-[9px] uppercase tracking-widest">
+                    <span>Daily streak progress</span>
+                    <span className="text-tertiary">{Math.min(((profile?.streak || 0) / 30) * 100, 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min(((profile?.streak || 0) / 30) * 100, 100)}%` }}
+                      className="h-full bg-tertiary" 
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4">
+                <p className="text-slate-500 font-mono text-[10px] uppercase tracking-widest">Add your skills in Profile to track your growth!</p>
+                <button 
+                  onClick={() => navigate('/profile')}
+                  className="px-6 py-2 bg-white/5 border border-white/10 font-headline text-[10px] uppercase tracking-widest hover:bg-white/10 transition-all"
+                >
+                  Go to Profile
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Live Feed Sidebar */}
+        <aside className="space-y-8">
+          <div className="glass-panel p-6 rounded-xl border border-white/5 h-full min-h-[600px] flex flex-col">
+            <h3 className="font-headline font-black text-sm uppercase tracking-widest mb-6 flex justify-between items-center">
+              <span>Live Activity</span>
+              <span className="material-symbols-outlined text-sm text-secondary animate-spin">sync</span>
+            </h3>
+
+            <div className="space-y-6 flex-1">
               <AnimatePresence initial={false}>
-                {feed.map(item => (
-                  <motion.div key={item.id}
-                    initial={{ opacity: 0, x: 50 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -50 }}
-                    className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-electric/30 to-neon-purple/30 flex items-center justify-center text-xs font-bold text-white shrink-0">
-                      {item.userName?.charAt(0) || '?'}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-gray-300">
-                        <span className="font-semibold text-white">{item.userName}</span>{' '}
-                        {item.userCity && <span className="text-gray-500">({item.userCity})</span>}{' '}
-                        {item.action}
-                      </p>
-                      <p className="text-xs text-gray-600 mt-1">
-                        {item.timestamp?.toDate
-                          ? new Date(item.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                          : 'Just now'}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
+                {feed.length === 0 ? (
+                  <div className="space-y-4">
+                    {[
+                      { icon: '🔥', text: 'This is where live activity appears' },
+                      { icon: '📍', text: 'When someone completes a swap near you, it shows up here in real time' },
+                      { icon: '🤝', text: 'Invite friends to start seeing activity!' }
+                    ].map((sample, idx) => (
+                      <div key={idx} className="flex gap-4 p-3 rounded-lg border border-white/5 opacity-50 relative overflow-hidden group">
+                        <div className="absolute top-1 right-2 font-mono text-[7px] text-slate-600 uppercase tracking-widest">Sample</div>
+                        <div className="w-10 h-10 rounded-lg bg-surface-container-highest border border-white/10 flex items-center justify-center text-lg grayscale shrink-0">
+                          {sample.icon}
+                        </div>
+                        <p className="text-[10px] text-slate-400 leading-tight flex-1 flex items-center">{sample.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  feed.map((item) => (
+                    <motion.div 
+                      key={item.id}
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      className="flex gap-4 p-3 rounded-lg hover:bg-white/5 transition-colors border border-transparent hover:border-white/10"
+                    >
+                      <div className="w-10 h-10 rounded-lg bg-surface-container-highest border border-white/10 flex items-center justify-center font-black text-xs text-primary shrink-0">
+                        {item.userName?.charAt(0) || '?'}
+                      </div>
+                      <div className="space-y-1 overflow-hidden">
+                        <p className="text-xs font-headline font-bold truncate">
+                          {item.userName} <span className="font-normal text-slate-500">({item.userCity || 'Global'})</span>
+                        </p>
+                        <p className="text-[10px] text-slate-400 capitalize">{item.action}</p>
+                        <p className="text-[9px] font-mono text-primary/60">
+                          {item.timestamp?.toDate
+                            ? new Date(item.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : 'Syncing...'}
+                        </p>
+                      </div>
+                    </motion.div>
+                  ))
+                )}
               </AnimatePresence>
             </div>
-          )}
 
-          <div className="pt-4 mt-2 border-t border-white/5 text-center">
-            <button className="text-xs text-electric bg-transparent border-none cursor-pointer">
-              View all activity →
+            <button 
+              onClick={() => navigate('/swaps')}
+              className="mt-8 w-full py-3 bg-white/5 hover:bg-white/10 text-[10px] font-headline font-bold uppercase tracking-widest rounded-sm transition-all border border-white/5 border-t-2 border-t-primary"
+            >
+              View Activity History
             </button>
           </div>
-        </div>
-      </div>
 
-      {/* Your Skills */}
-      <div className="glass-card p-5">
-        <h3 className="text-sm font-semibold text-white mb-4">Your Skills</h3>
-        {(profile?.teachSkills?.length || 0) + (profile?.learnSkills?.length || 0) === 0 ? (
-          <p className="text-sm text-gray-500">No skills added yet. <a href="/onboarding" className="text-electric">Complete your profile →</a></p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {(profile?.teachSkills || []).map(s => <span key={s} className="tag-green">{s}</span>)}
-            {(profile?.learnSkills || []).map(s => <span key={s} className="tag-blue">{s}</span>)}
-          </div>
-        )}
+          {/* Daily Challenge Card */}
+          <AnimatePresence>
+            {challengeState !== 'dismissed' && (
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className={`relative overflow-hidden p-6 rounded-xl border transition-all duration-500 ${challengeState === 'accepted' ? 'bg-primary/10 border-primary/40' : 'bg-surface-container border-white/10'}`}
+              >
+                <div className="relative z-10 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="font-headline font-bold text-sm tracking-tight">Today's Challenge</h4>
+                    {challengeState === 'accepted' && <span className="material-symbols-outlined text-primary text-sm animate-pulse">timer</span>}
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs font-headline font-black uppercase italic">Complete one skill swap today!</p>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest">Reward: Earn 2x coins 🔥</p>
+                  </div>
+
+                  {challengeState === 'accepted' ? (
+                    <div className="pt-2">
+                       <p className="font-mono text-[10px] text-primary uppercase tracking-[0.2em] mb-1">Challenge Accepted!</p>
+                       <p className="font-headline font-black text-2xl tracking-tighter italic">{timeLeft}</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+                      <button 
+                        onClick={() => handleChallengeAction('accepted')}
+                        className="py-2 bg-primary text-on-primary-fixed font-headline font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all"
+                      >
+                        Accept
+                      </button>
+                      <button 
+                        onClick={() => handleChallengeAction('dismissed')}
+                        className="py-2 bg-white/5 border border-white/10 text-slate-400 font-headline font-black text-[10px] uppercase tracking-widest hover:bg-white/10 transition-all"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </aside>
       </div>
     </PageTransition>
   );
