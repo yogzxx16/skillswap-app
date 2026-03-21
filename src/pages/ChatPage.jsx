@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { HiPaperAirplane, HiDotsVertical, HiSearch } from 'react-icons/hi';
 import { subscribeToChats, subscribeToMessages, sendMessage, markChatAsRead, subscribeToUsersPresence } from '../services/chatService';
+import { notifyNewMessage } from '../services/notificationService';
 
 const AVATAR_COLORS = [
   'linear-gradient(135deg,#667eea,#764ba2)',
@@ -49,7 +50,23 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!selectedChatId) { setMessages([]); return; }
-    const unsub = subscribeToMessages(selectedChatId, setMessages);
+
+    const unsub = subscribeToMessages(selectedChatId, (newMessages) => {
+      // ✅ Notify if new message from someone else
+      setMessages(prev => {
+        if (
+          newMessages.length > prev.length &&
+          newMessages.length > 0
+        ) {
+          const latest = newMessages[newMessages.length - 1];
+          if (latest.senderId !== user?.uid) {
+            notifyNewMessage(latest.senderName, latest.text);
+          }
+        }
+        return newMessages;
+      });
+    });
+
     if (user?.uid) markChatAsRead(selectedChatId, user.uid).catch(console.error);
     return () => unsub();
   }, [selectedChatId, user]);
@@ -85,9 +102,9 @@ export default function ChatPage() {
 
   const selectedChat = chats.find(c => c.id === selectedChatId);
   const otherId = selectedChat?.participants?.find(p => p !== user?.uid);
-  const otherName = selectedChat?.participantNames?.[otherId] || 
-                    (selectedChat?.participantNames && Object.values(selectedChat.participantNames).find(n => n !== profile?.displayName)) ||
-                    'User';
+  const otherName = selectedChat?.participantNames?.[otherId] ||
+    (selectedChat?.participantNames && Object.values(selectedChat.participantNames).find(n => n !== profile?.displayName)) ||
+    'User';
   const otherOnline = isOnline(presenceMap[otherId]);
 
   return (

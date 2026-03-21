@@ -12,6 +12,8 @@ import PracticeZonePage from './pages/PracticeZonePage';
 import LeaderboardPage from './pages/LeaderboardPage';
 import ProfilePage from './pages/ProfilePage';
 import PublicProfilePage from './pages/PublicProfilePage';
+import SessionRoomPage from './pages/SessionRoomPage';
+
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -44,6 +46,7 @@ function AppRoutes() {
       <Route path="/practice" element={<ProtectedRoute><PracticeZonePage /></ProtectedRoute>} />
       <Route path="/leaderboard" element={<ProtectedRoute><LeaderboardPage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+      <Route path="/session/:swapId" element={<ProtectedRoute><SessionRoomPage /></ProtectedRoute>} />
       <Route path="/profile/:uid" element={<ProtectedRoute><PublicProfilePage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>

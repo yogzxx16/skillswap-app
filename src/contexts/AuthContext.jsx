@@ -3,19 +3,77 @@ import { auth, googleProvider, db } from '../firebase';
 import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { updateUserPresence } from '../services/chatService';
-
+import { requestNotificationPermission } from '../services/notificationService';
 const AuthContext = createContext(null);
+
+// ── Streak Logic Helpers ─────────────────────────────────────
+const getDateString = (date = new Date()) => {
+  return date.toISOString().split('T')[0]; // "2026-03-21"
+};
+
+const getDaysDiff = (dateStr1, dateStr2) => {
+  const d1 = new Date(dateStr1);
+  const d2 = new Date(dateStr2);
+  const diff = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+  return diff;
+};
+
+const checkAndUpdateStreak = async (uid, existingProfile) => {
+  const today = getDateString();
+  const lastLoginDate = existingProfile?.lastLoginDate || null;
+  const currentStreak = existingProfile?.streak || 0;
+  const streakRefillsLeft = existingProfile?.streakRefillsLeft ?? 4;
+  const lastWeekReset = existingProfile?.lastWeekReset || today;
+
+  // Check if week has passed → reset refill count to 4
+  const daysSinceWeekReset = getDaysDiff(lastWeekReset, today);
+  const newRefillsLeft = daysSinceWeekReset >= 7 ? 4 : streakRefillsLeft;
+  const newLastWeekReset = daysSinceWeekReset >= 7 ? today : lastWeekReset;
+
+  let newStreak = currentStreak;
+  let updates = {};
+
+  if (!lastLoginDate) {
+    // First ever login
+    newStreak = 1;
+  } else if (lastLoginDate === today) {
+    // Already logged in today — no change
+    return null;
+  } else {
+    const daysDiff = getDaysDiff(lastLoginDate, today);
+    if (daysDiff === 1) {
+      // Logged in yesterday → increment streak 🔥
+      newStreak = currentStreak + 1;
+    } else if (daysDiff > 1) {
+      // Missed days → reset streak 💔
+      newStreak = 1;
+    }
+  }
+
+  updates = {
+    streak: newStreak,
+    lastLoginDate: today,
+    streakRefillsLeft: newRefillsLeft,
+    lastWeekReset: newLastWeekReset,
+  };
+
+  try {
+    await updateDoc(doc(db, 'users', uid), updates);
+    return updates;
+  } catch (err) {
+    console.error('Streak update error:', err);
+    return null;
+  }
+};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Listen to Firebase Auth state changes
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // User is logged in — load their profile from Firestore
         const userDocRef = doc(db, 'users', firebaseUser.uid);
         const userDoc = await getDoc(userDocRef);
 
@@ -27,10 +85,25 @@ export function AuthProvider({ children }) {
         };
 
         if (userDoc.exists()) {
-          // ✅ Existing user — load their saved data
-          setProfile(userDoc.data());
+          // ✅ Existing user — load profile
+          const existingProfile = userDoc.data();
+          // ✅ Ask for notification permission on login
+          requestNotificationPermission();
+
+          // ✅ Run streak check on every login
+          const streakUpdates = await checkAndUpdateStreak(
+            firebaseUser.uid,
+            existingProfile
+          );
+
+          const updatedProfile = streakUpdates
+            ? { ...existingProfile, ...streakUpdates }
+            : existingProfile;
+
+          setProfile(updatedProfile);
         } else {
-          // ✅ Brand new user — create fresh profile
+          // ✅ Brand new user
+          const today = getDateString();
           const newProfile = {
             uid: firebaseUser.uid,
             email: firebaseUser.email,
@@ -41,12 +114,16 @@ export function AuthProvider({ children }) {
             city: '',
             xp: 0,
             coins: 100,
-            streak: 0,
+            streak: 1,
             level: 'Beginner',
             badges: [],
             swapHistory: [],
             portfolio: [],
             onboarded: false,
+            lastLoginDate: today,
+            streakRefillsLeft: 4,
+            lastWeekReset: today,
+            swapCount: 0,
             createdAt: new Date().toISOString(),
           };
           await setDoc(userDocRef, newProfile);
@@ -55,7 +132,6 @@ export function AuthProvider({ children }) {
 
         setUser(sessionUser);
       } else {
-        // User logged out
         setUser(null);
         setProfile(null);
       }
@@ -65,7 +141,7 @@ export function AuthProvider({ children }) {
     return () => unsub();
   }, []);
 
-  // Update presence
+  // Update presence every minute
   useEffect(() => {
     if (user?.uid) {
       updateUserPresence(user.uid).catch(console.error);
@@ -80,7 +156,6 @@ export function AuthProvider({ children }) {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       return result.user;
-      // onAuthStateChanged above handles everything automatically
     } catch (error) {
       console.error('Google sign in error:', error);
       throw error;
@@ -112,19 +187,71 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     await signOut(auth);
-    // onAuthStateChanged sets user/profile to null automatically
   };
 
   const updateProfile = async (updates) => {
     if (!user?.uid) return;
     try {
       const userDocRef = doc(db, 'users', user.uid);
-      // ✅ Save to Firestore — persists across login/logout
       await updateDoc(userDocRef, updates);
-      // ✅ Update local state immediately
       setProfile(prev => ({ ...prev, ...updates }));
     } catch (error) {
       console.error('Error updating profile:', error);
+    }
+  };
+
+  // ── Streak Refill Function ────────────────────────────────
+  // Costs 150 XP, restores 1 lost streak day
+  // Max 4 refills per week, then must wait for next week
+  const refillStreak = async () => {
+    if (!user?.uid || !profile) return { success: false, reason: 'Not logged in' };
+
+    const XP_COST = 150;
+    const currentXP = profile.xp || 0;
+    const refillsLeft = profile.streakRefillsLeft ?? 4;
+
+    // Check refills left
+    if (refillsLeft <= 0) {
+      return {
+        success: false,
+        reason: 'No refills left this week! You get 4 refills per week. Come back next week! 📅'
+      };
+    }
+
+    // Check XP
+    if (currentXP < XP_COST) {
+      return {
+        success: false,
+        reason: `Not enough XP! You need ${XP_COST} XP but have ${currentXP} XP. Complete swaps or practice to earn more! ⚡`
+      };
+    }
+
+    // Apply refill
+    const today = getDateString();
+    const newStreak = (profile.streak || 0) + 1;
+    const newXP = currentXP - XP_COST;
+    const newRefillsLeft = refillsLeft - 1;
+
+    const updates = {
+      streak: newStreak,
+      xp: newXP,
+      streakRefillsLeft: newRefillsLeft,
+      lastLoginDate: today,
+    };
+
+    try {
+      await updateDoc(doc(db, 'users', user.uid), updates);
+      setProfile(prev => ({ ...prev, ...updates }));
+      return {
+        success: true,
+        newStreak,
+        newXP,
+        refillsLeft: newRefillsLeft,
+        reason: `Streak restored to ${newStreak} days! 🔥 (-${XP_COST} XP). ${newRefillsLeft} refills left this week.`
+      };
+    } catch (err) {
+      console.error('Refill error:', err);
+      return { success: false, reason: 'Something went wrong. Try again!' };
     }
   };
 
@@ -137,6 +264,7 @@ export function AuthProvider({ children }) {
     loginWithGoogle,
     logout,
     updateProfile,
+    refillStreak,
   };
 
   return (
