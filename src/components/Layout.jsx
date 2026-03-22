@@ -39,7 +39,6 @@ export default function Layout({ children }) {
     return () => unsubscribe();
   }, [user]);
 
-  // Close sidebar on route change
   useEffect(() => {
     setSidebarOpen(false);
   }, [location.pathname]);
@@ -52,24 +51,26 @@ export default function Layout({ children }) {
   const isLandingPage = location.pathname === '/';
   if (isLandingPage) return <>{children}</>;
 
+  const isChat = location.pathname === '/chat';
+
   return (
-    <div className="min-h-screen bg-background text-on-background font-body selection:bg-primary/30">
+    <div className="min-h-screen bg-background text-on-background font-body selection:bg-primary/30 overflow-x-hidden">
 
       {/* ── Top App Bar ─────────────────────────────────────── */}
-      <header className="fixed top-0 w-full z-50 border-b border-white/10 bg-slate-950/60 backdrop-blur-xl h-16 md:h-20 flex justify-between items-center px-4 md:px-8">
+      <header
+        style={{ width: '100vw', left: 0, transform: 'translateZ(0)' }}
+        className="fixed top-0 z-50 border-b border-white/10 bg-slate-950/60 backdrop-blur-xl h-16 md:h-20 flex justify-between items-center px-4 md:px-8"
+      >
         <div className="flex items-center gap-3 md:gap-8">
-          {/* Hamburger — mobile only */}
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="lg:hidden p-2 text-slate-400 hover:text-white transition-colors"
-            aria-label="Toggle menu"
           >
             <span className="material-symbols-outlined text-xl">
               {sidebarOpen ? 'close' : 'menu'}
             </span>
           </button>
 
-          {/* Logo */}
           <Link
             to="/dashboard"
             className="text-xl md:text-2xl font-black bg-gradient-to-r from-blue-500 to-cyan-400 bg-clip-text text-transparent font-headline tracking-tighter no-underline"
@@ -77,15 +78,14 @@ export default function Layout({ children }) {
             SkillSwap
           </Link>
 
-          {/* Desktop nav */}
           <nav className="hidden lg:flex items-center space-x-6 font-headline font-bold uppercase tracking-widest text-[10px]">
             {navItems.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
                 className={`transition-colors no-underline ${location.pathname === item.path
-                    ? 'text-blue-400 border-b-2 border-blue-500 pb-1'
-                    : 'text-slate-400 hover:text-slate-100'
+                  ? 'text-blue-400 border-b-2 border-blue-500 pb-1'
+                  : 'text-slate-400 hover:text-slate-100'
                   }`}
               >
                 {item.label}
@@ -94,7 +94,6 @@ export default function Layout({ children }) {
           </nav>
         </div>
 
-        {/* Right side icons */}
         <div className="flex items-center gap-3 md:gap-6">
           <button className="material-symbols-outlined text-slate-400 hover:text-primary transition-all text-xl">
             notifications
@@ -122,14 +121,13 @@ export default function Layout({ children }) {
 
       {/* ── Sidebar ─────────────────────────────────────────── */}
       <aside className={`
-        fixed left-0 top-0 flex flex-col h-full w-72 
-        border-r border-white/5 bg-slate-950/95 backdrop-blur-2xl 
+        fixed left-0 top-0 flex flex-col h-full w-72
+        border-r border-white/5 bg-slate-950/95 backdrop-blur-2xl
         z-40 pt-20 pb-6 px-4
         transition-transform duration-300 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
         lg:translate-x-0
       `}>
-        {/* User Level Badge */}
         <div className="mb-8 px-2">
           <div className="flex items-center gap-3 p-3 bg-surface-container rounded-xl border border-white/5">
             <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-on-primary-fixed shadow-[0_0_15px_rgba(133,173,255,0.4)] shrink-0">
@@ -139,7 +137,7 @@ export default function Layout({ children }) {
             </div>
             <div className="min-w-0">
               <h3 className="font-headline font-black text-on-surface text-base leading-none truncate">
-                Level {profile?.level || 'Beginner'}
+                {profile?.displayName || 'User'}
               </h3>
               <p className="font-label text-[10px] text-secondary uppercase tracking-widest mt-1">
                 {profile?.level || 'Beginner'}
@@ -148,7 +146,6 @@ export default function Layout({ children }) {
           </div>
         </div>
 
-        {/* Nav Items */}
         <nav className="flex-1 space-y-1">
           {sideNavItems.map((item) => {
             const isActive = location.pathname === item.path;
@@ -157,11 +154,11 @@ export default function Layout({ children }) {
                 key={item.path}
                 to={item.path}
                 className={`
-                  flex items-center gap-4 py-3 px-4 rounded-xl 
-                  transition-all duration-200 no-underline
+                  flex items-center gap-4 py-3 px-4 rounded-xl
+                  transition-colors duration-200 no-underline
                   ${isActive
-                    ? 'bg-primary/10 text-primary border-r-4 border-primary shadow-[4px_0_15px_-5px_rgba(133,173,255,0.4)]'
-                    : 'text-slate-500 hover:text-slate-200 hover:bg-white/5 hover:translate-x-1'
+                    ? 'bg-primary/10 text-primary border-r-4 border-primary'
+                    : 'text-slate-500 hover:text-slate-200 hover:bg-white/5'
                   }
                 `}
               >
@@ -172,30 +169,8 @@ export default function Layout({ children }) {
           })}
         </nav>
 
-        {/* Bottom Actions */}
         <div className="pt-4 border-t border-white/5">
           <div className="flex items-center justify-between px-2 py-2">
-            {/* Help tooltip */}
-            <div className="relative group">
-              <button className="material-symbols-outlined text-slate-600 hover:text-slate-300 transition-colors p-2">
-                help
-              </button>
-              <div className="
-                absolute left-full ml-3 bottom-0 w-64 p-4 
-                glass-panel border border-white/10 
-                text-[10px] leading-relaxed text-slate-300 
-                opacity-0 invisible pointer-events-none
-                group-hover:opacity-100 group-hover:visible
-                transition-all duration-200 z-50 shadow-2xl rounded-xl
-              ">
-                <p className="font-headline font-black text-primary uppercase tracking-widest mb-2 text-[9px]">
-                  SkillSwap Guide
-                </p>
-                Trade your skills, learn new ones. Teach what you know and learn what you don't — completely free! Find a swap partner → Chat → Exchange skills → Practice → Earn XP and badges!
-              </div>
-            </div>
-
-            {/* XP + Coins quick stats */}
             <div className="flex items-center gap-3">
               <div className="text-center">
                 <p className="font-headline font-black text-xs text-primary">⚡{profile?.xp || 0}</p>
@@ -206,8 +181,6 @@ export default function Layout({ children }) {
                 <p className="font-mono text-[7px] text-slate-600 uppercase">Coins</p>
               </div>
             </div>
-
-            {/* Logout */}
             <button
               onClick={handleLogout}
               className="material-symbols-outlined text-slate-600 hover:text-error transition-colors p-2"
@@ -233,14 +206,23 @@ export default function Layout({ children }) {
       </AnimatePresence>
 
       {/* ── Main Content ─────────────────────────────────────── */}
-      <main className="lg:ml-72 pt-16 md:pt-20 min-h-screen">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-10 pb-24">
-          {children}
-        </div>
+      <main className="lg:ml-72 pt-16 md:pt-20 overflow-x-hidden">
+        {isChat ? (
+          <div className="h-[calc(100dvh-4rem)] md:h-[calc(100dvh-5rem)] px-4 md:px-8 py-4">
+            {children}
+          </div>
+        ) : (
+          // ✅ pb-24 ensures content isn't hidden behind bottom nav
+          <div className="w-full max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-10 pb-24">
+            {children}
+          </div>
+        )}
       </main>
 
-      {/* ── Mobile Bottom Nav Bar ────────────────────────────── */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-slate-950/95 backdrop-blur-xl border-t border-white/10 px-2 py-2 safe-area-pb">
+      {/* ── Mobile Bottom Nav ────────────────────────────────── */}
+      {/* ✅ bottom-nav-safe class uses translateZ(0) to pin to GPU layer
+          This stops Chrome Android from bouncing it when address bar hides/shows */}
+      <nav className="bottom-nav-safe lg:hidden bg-slate-950/95 backdrop-blur-xl border-t border-white/10 px-2 py-2 z-50">
         <div className="flex items-center justify-around max-w-lg mx-auto">
           {[
             { path: '/dashboard', icon: 'home' },
@@ -255,15 +237,13 @@ export default function Layout({ children }) {
                 key={item.path}
                 to={item.path}
                 className={`
-                  flex flex-col items-center justify-center 
-                  w-12 h-12 rounded-xl transition-all no-underline
-                  ${isActive
-                    ? 'bg-primary/20 text-primary scale-110'
-                    : 'text-slate-600 hover:text-slate-300'
-                  }
+                  flex flex-col items-center justify-center
+                  w-12 h-12 rounded-xl transition-colors no-underline
+                  ${isActive ? 'bg-primary/20 text-primary' : 'text-slate-600'}
                 `}
               >
-                <span className="material-symbols-outlined text-xl"
+                <span
+                  className="material-symbols-outlined text-xl"
                   style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}
                 >
                   {item.icon}

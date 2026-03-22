@@ -1,14 +1,18 @@
 // ── Notification Service ─────────────────────────────────────
 // Uses browser's built-in Notifications API — 100% free!
 
+// src/services/notificationService.js
+
 export const requestNotificationPermission = async () => {
-    if (!('Notification' in window)) return false;
+    if (typeof Notification === 'undefined') return false;
+
     if (Notification.permission === 'granted') return true;
+
     if (Notification.permission === 'denied') return false;
+
     const permission = await Notification.requestPermission();
     return permission === 'granted';
 };
-
 export const sendNotification = (title, body, options = {}) => {
     if (!('Notification' in window)) return;
     if (Notification.permission !== 'granted') return;

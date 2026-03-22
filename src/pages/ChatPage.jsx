@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { HiPaperAirplane, HiDotsVertical, HiSearch } from 'react-icons/hi';
-import { subscribeToChats, subscribeToMessages, sendMessage, markChatAsRead, subscribeToUsersPresence } from '../services/chatService';
+import { HiPaperAirplane, HiDotsVertical, HiSearch, HiArrowLeft } from 'react-icons/hi';
+import { subscribeToChats, subscribeToMessages, sendMessage, markChatAsRead, subscribeToUsersPresence, createOrGetChat } from '../services/chatService';
 import { notifyNewMessage } from '../services/notificationService';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 const AVATAR_COLORS = [
   'linear-gradient(135deg,#667eea,#764ba2)',
@@ -23,26 +25,68 @@ const getAvatarColor = (name) => {
 export default function ChatPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [chats, setChats] = useState([]);
-  const [selectedChatId, setSelectedChatId] = useState(
-    () => localStorage.getItem('skillswap_chatid') || null
-  );
+  const [selectedChatId, setSelectedChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMsg, setNewMsg] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [presenceMap, setPresenceMap] = useState({});
-  const [showContacts, setShowContacts] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [loadingTarget, setLoadingTarget] = useState(false);
   const messagesEndRef = useRef(null);
+
+  // ✅ Handle ?userId= param — auto open chat with that user
+  useEffect(() => {
+    const targetUserId = searchParams.get('userId');
+    if (!targetUserId || !user?.uid) return;
+
+    const openChatWithUser = async () => {
+      setLoadingTarget(true);
+      try {
+        // Fetch target user profile
+        const targetDoc = await getDoc(doc(db, 'users', targetUserId));
+        if (!targetDoc.exists()) return;
+        const targetUser = targetDoc.data();
+
+        // Create or get existing chat
+        const currentUserData = {
+          uid: user.uid,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+        };
+        const chatId = await createOrGetChat(currentUserData, { uid: targetUserId, ...targetUser }, '');
+
+        if (chatId) {
+          setSelectedChatId(chatId);
+          localStorage.setItem('skillswap_chatid', chatId);
+          setShowSidebar(false); // go straight to chat on mobile
+        }
+      } catch (err) {
+        console.error('Error opening chat:', err);
+      } finally {
+        setLoadingTarget(false);
+      }
+    };
+
+    openChatWithUser();
+  }, [searchParams, user]);
 
   useEffect(() => {
     if (!user?.uid) return;
+
+    // Restore last chat from localStorage if no userId param
+    const targetUserId = searchParams.get('userId');
+    if (!targetUserId) {
+      const saved = localStorage.getItem('skillswap_chatid');
+      if (saved) {
+        setSelectedChatId(saved);
+        setShowSidebar(false);
+      }
+    }
+
     const unsubChats = subscribeToChats(user.uid, (fetchedChats) => {
       setChats(fetchedChats);
-      if (fetchedChats.length > 0 && !selectedChatId) {
-        const firstId = fetchedChats[0].id;
-        setSelectedChatId(firstId);
-        localStorage.setItem('skillswap_chatid', firstId);
-      }
     });
     const unsubPresence = subscribeToUsersPresence((map) => setPresenceMap(map));
     return () => { unsubChats(); unsubPresence(); };
@@ -50,14 +94,9 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!selectedChatId) { setMessages([]); return; }
-
     const unsub = subscribeToMessages(selectedChatId, (newMessages) => {
-      // ✅ Notify if new message from someone else
       setMessages(prev => {
-        if (
-          newMessages.length > prev.length &&
-          newMessages.length > 0
-        ) {
+        if (newMessages.length > prev.length && newMessages.length > 0) {
           const latest = newMessages[newMessages.length - 1];
           if (latest.senderId !== user?.uid) {
             notifyNewMessage(latest.senderName, latest.text);
@@ -66,7 +105,6 @@ export default function ChatPage() {
         return newMessages;
       });
     });
-
     if (user?.uid) markChatAsRead(selectedChatId, user.uid).catch(console.error);
     return () => unsub();
   }, [selectedChatId, user]);
@@ -87,6 +125,13 @@ export default function ChatPage() {
     }
   };
 
+  const handleSelectChat = (chatId, unread) => {
+    setSelectedChatId(chatId);
+    localStorage.setItem('skillswap_chatid', chatId);
+    setShowSidebar(false);
+    if (unread > 0 && user?.uid) markChatAsRead(chatId, user.uid);
+  };
+
   const formatTime = (ts) => {
     if (!ts) return '';
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -102,17 +147,30 @@ export default function ChatPage() {
 
   const selectedChat = chats.find(c => c.id === selectedChatId);
   const otherId = selectedChat?.participants?.find(p => p !== user?.uid);
-  const otherName = selectedChat?.participantNames?.[otherId] ||
-    (selectedChat?.participantNames && Object.values(selectedChat.participantNames).find(n => n !== profile?.displayName)) ||
-    'User';
+  const otherName = selectedChat?.participantNames?.[otherId] || 'User';
   const otherOnline = isOnline(presenceMap[otherId]);
 
-  return (
-    <div className="fade-in h-[calc(100vh-7rem)] lg:h-[calc(100vh-4rem)] flex flex-col">
-      <div className="flex-1 flex glass-card overflow-hidden">
+  if (loadingTarget) {
+    return (
+      <div className="h-[calc(100dvh-7rem)] flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
-        {/* Sidebar */}
-        <div className={`${showContacts ? 'flex' : 'hidden'} md:flex flex-col w-full md:w-80 border-r border-white/10 bg-navy-900/50 absolute md:relative z-10 h-full`}>
+  return (
+    <div className="fade-in h-[calc(100dvh-7rem)] lg:h-[calc(100dvh-4rem)] flex flex-col">
+      <div className="flex-1 flex glass-card overflow-hidden relative">
+
+        {/* ── SIDEBAR ── */}
+        <div className={`
+          flex flex-col border-r border-white/10 bg-navy-900/50
+          ${showSidebar ? 'flex' : 'hidden'}
+          md:flex
+          w-full md:w-80
+          absolute md:relative inset-0 md:inset-auto
+          z-10 md:z-auto
+        `}>
           <div className="p-4 border-b border-white/10">
             <h2 className="text-lg font-bold text-white mb-3">Messages</h2>
             <div className="relative">
@@ -140,27 +198,23 @@ export default function ChatPage() {
                 return (
                   <button
                     key={chat.id}
-                    onClick={() => {
-                      setSelectedChatId(chat.id);
-                      localStorage.setItem('skillswap_chatid', chat.id);
-                      setShowContacts(false);
-                      if (unread > 0 && user?.uid) markChatAsRead(chat.id, user.uid);
-                    }}
-                    className={`w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-none cursor-pointer text-left ${selectedChatId === chat.id ? 'bg-electric/10 border-r-2 border-r-electric' : ''
-                      }`}
+                    onClick={() => handleSelectChat(chat.id, unread)}
+                    className={`w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors border-none cursor-pointer text-left ${selectedChatId === chat.id ? 'bg-electric/10 border-r-2 border-r-electric' : ''}`}
                   >
                     <div className="relative shrink-0">
                       <div className="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold"
                         style={{ background: getAvatarColor(cOtherName) }}>
                         {cOtherName.charAt(0)}
                       </div>
-                      {cOnline && <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-neon-green rounded-full border-2 border-navy-900" />}
+                      {cOnline && <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-navy-900" />}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex justify-between items-center mb-1">
                         <p className="text-sm font-semibold text-white truncate">{cOtherName}</p>
                         <span className="text-[10px] text-gray-500 shrink-0">
-                          {chat.lastMessageTimestamp ? formatTime(chat.lastMessageTimestamp?.toDate ? chat.lastMessageTimestamp.toDate() : chat.lastMessageTimestamp) : ''}
+                          {chat.lastMessageTimestamp
+                            ? formatTime(chat.lastMessageTimestamp?.toDate ? chat.lastMessageTimestamp.toDate() : chat.lastMessageTimestamp)
+                            : ''}
                         </span>
                       </div>
                       <div className="flex justify-between items-center gap-2">
@@ -179,89 +233,91 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Chat Area */}
-        {selectedChatId ? (
-          <div className="flex-1 flex flex-col min-w-0">
-            {/* Header */}
-            <div className="px-4 py-3 border-b border-white/10 flex items-center gap-3 bg-navy-900/30">
-              <button onClick={() => setShowContacts(!showContacts)}
-                className="md:hidden text-gray-400 hover:text-white bg-transparent border-none cursor-pointer p-1">
-                ☰
-              </button>
-              <div className="relative">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold"
-                  style={{ background: getAvatarColor(otherName) }}>
-                  {otherName.charAt(0)}
+        {/* ── CHAT AREA ── */}
+        <div className={`
+          flex-1 flex flex-col min-w-0
+          ${showSidebar ? 'hidden' : 'flex'}
+          md:flex
+        `}>
+          {selectedChatId ? (
+            <>
+              {/* Header */}
+              <div className="px-4 py-3 border-b border-white/10 flex items-center gap-3 bg-navy-900/30">
+                <button onClick={() => setShowSidebar(true)} className="md:hidden text-gray-400 hover:text-white bg-transparent border-none cursor-pointer p-1">
+                  <HiArrowLeft size={20} />
+                </button>
+                <div className="relative">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold"
+                    style={{ background: getAvatarColor(otherName) }}>
+                    {otherName.charAt(0)}
+                  </div>
+                  {otherOnline && <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-navy-900" />}
                 </div>
-                {otherOnline && <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-neon-green rounded-full border-2 border-navy-900" />}
-              </div>
-              <div className="flex-1 min-w-0 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => navigate(`/profile/${otherId}`)}>
-                <p className="text-sm font-semibold text-white">{otherName}</p>
-                <p className="text-xs text-gray-500">{otherOnline ? '🟢 Online' : '⚫ Offline'}</p>
-              </div>
-              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => navigate(`/profile/${otherId}`)}>
+                  <p className="text-sm font-semibold text-white">{otherName}</p>
+                  <p className="text-xs text-gray-500">{otherOnline ? '🟢 Online' : '⚫ Offline'}</p>
+                </div>
                 <button className="w-9 h-9 rounded-lg hover:bg-white/5 flex items-center justify-center text-gray-400 hover:text-white transition-colors bg-transparent border-none cursor-pointer">
                   <HiDotsVertical size={18} />
                 </button>
               </div>
-            </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {messages.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-sm text-gray-500">
-                  Start the conversation! 👋
-                </div>
-              ) : (
-                messages.map((msg, i) => {
-                  const isMe = msg.senderId === user?.uid;
-                  const showDate = i === 0 || new Date(msg.timestamp).toDateString() !== new Date(messages[i - 1].timestamp).toDateString();
-                  return (
-                    <div key={msg.id || i}>
-                      {showDate && (
-                        <div className="text-center text-xs text-gray-600 my-4">
-                          {new Date(msg.timestamp).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
-                        </div>
-                      )}
-                      <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} mb-3`}>
-                        <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${isMe ? 'bg-electric text-white rounded-br-sm' : 'bg-navy-800 text-gray-100 border border-white/5 rounded-bl-sm'
-                          }`}>
-                          <p className="whitespace-pre-wrap">{msg.text}</p>
-                          <p className={`text-[10px] mt-1 text-right ${isMe ? 'text-blue-200' : 'text-gray-500'}`}>
-                            {formatTime(msg.timestamp)}
-                          </p>
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {messages.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-sm text-gray-500">
+                    Start the conversation! 👋
+                  </div>
+                ) : (
+                  messages.map((msg, i) => {
+                    const isMe = msg.senderId === user?.uid;
+                    const showDate = i === 0 || new Date(msg.timestamp).toDateString() !== new Date(messages[i - 1].timestamp).toDateString();
+                    return (
+                      <div key={msg.id || i}>
+                        {showDate && (
+                          <div className="text-center text-xs text-gray-600 my-4">
+                            {new Date(msg.timestamp).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
+                          </div>
+                        )}
+                        <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} mb-3`}>
+                          <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${isMe ? 'bg-primary text-white rounded-br-sm' : 'bg-surface-container-highest text-gray-100 border border-white/5 rounded-bl-sm'}`}>
+                            <p className="whitespace-pre-wrap">{msg.text}</p>
+                            <p className={`text-[10px] mt-1 text-right ${isMe ? 'text-blue-200' : 'text-gray-500'}`}>
+                              {formatTime(msg.timestamp)}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })
-              )}
-              <div ref={messagesEndRef} />
-            </div>
+                    );
+                  })
+                )}
+                <div ref={messagesEndRef} />
+              </div>
 
-            {/* Input */}
-            <form onSubmit={handleSend} className="p-3 border-t border-white/10 flex items-center gap-3 bg-navy-900/50">
-              <input
-                value={newMsg}
-                onChange={e => setNewMsg(e.target.value)}
-                placeholder="Type a message..."
-                className="flex-1 bg-navy-950 border border-white/10 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-electric text-sm"
-              />
-              <button type="submit" disabled={!newMsg.trim()}
-                className="w-11 h-11 rounded-xl bg-electric flex items-center justify-center text-white hover:opacity-90 transition-all disabled:opacity-50 border-none cursor-pointer shrink-0">
-                <HiPaperAirplane size={18} className="rotate-90" />
-              </button>
-            </form>
-          </div>
-        ) : (
-          <div className="flex-1 hidden md:flex flex-col items-center justify-center text-center p-8">
-            <div className="w-20 h-20 rounded-full bg-navy-800 border border-white/5 flex items-center justify-center mb-6">
-              <HiPaperAirplane size={32} className="text-gray-600 rotate-45 -ml-1" />
+              {/* Input */}
+              <form onSubmit={handleSend} className="p-3 border-t border-white/10 flex items-center gap-3 bg-navy-900/50">
+                <input
+                  value={newMsg}
+                  onChange={e => setNewMsg(e.target.value)}
+                  placeholder="Type a message..."
+                  className="flex-1 bg-surface-container border border-white/10 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-primary text-sm"
+                />
+                <button type="submit" disabled={!newMsg.trim()}
+                  className="w-11 h-11 rounded-xl bg-primary flex items-center justify-center text-white hover:opacity-90 transition-all disabled:opacity-50 border-none cursor-pointer shrink-0">
+                  <HiPaperAirplane size={18} className="rotate-90" />
+                </button>
+              </form>
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+              <div className="w-20 h-20 rounded-full bg-surface-container border border-white/5 flex items-center justify-center mb-6">
+                <HiPaperAirplane size={32} className="text-gray-600 rotate-45 -ml-1" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Your Messages</h3>
+              <p className="text-gray-500 max-w-sm">Select a conversation or go to Explore to find swap partners!</p>
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">Your Messages</h3>
-            <p className="text-gray-500 max-w-sm">Select a conversation or go to Explore to find swap partners!</p>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

@@ -15,6 +15,7 @@
   --color-primary-container: #6e9fff;
   --color-primary-dim: #699cff;
   --color-on-primary: #002c66;
+  --color-on-primary-fixed: #002c66;
   --color-secondary: #ac8aff;
   --color-secondary-container: #5516be;
   --color-secondary-fixed: #dac9ff;
@@ -34,15 +35,29 @@
   --font-label: "Inter", sans-serif;
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
+  width: 100%;
+}
+
 body {
   background-color: #070e1b;
   color: #e2e8fb;
   font-family: "Plus Jakarta Sans", sans-serif;
+  overflow-x: hidden;
+  width: 100%;
 }
 
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   vertical-align: middle;
+  display: inline-block;
 }
 
 .glass-panel {
@@ -52,6 +67,15 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.glass-card {
+  background: rgba(28, 38, 57, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
 .text-gradient {
   background: linear-gradient(to bottom, #85adff, #ac8aff);
   -webkit-background-clip: text;
@@ -59,34 +83,14 @@ body {
   background-clip: text;
 }
 
-.tilt-card {
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
 .tilt-card:hover {
   transform: perspective(1000px) rotateX(2deg) rotateY(2deg) scale(1.02);
+  transition: transform 0.3s ease;
 }
 
 .skill-tag:hover {
   transform: translateY(-4px);
-  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-@keyframes shimmer {
-  100% {
-    left: 150%;
-  }
-}
-
-.shimmer-bar::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  animation: shimmer 2s infinite;
+  transition: transform 0.2s ease;
 }
 
 @keyframes floatUp {
@@ -103,4 +107,17 @@ body {
 
 .floating-xp {
   animation: floatUp 2s ease-out forwards;
+}
+
+/* ✅ Bottom nav — GPU layer, never moves on Chrome Android */
+.bottom-nav-safe {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  z-index: 50;
 }
